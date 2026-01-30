@@ -42,6 +42,11 @@ final class MainViewModel {
     var errorMessage: String?
     var showError: Bool = false
 
+    // MARK: - Dialog State
+
+    var showCloneSheet: Bool = false
+    var showInitSheet: Bool = false
+
     // MARK: - Services
 
     private let gitService: GitService
@@ -63,15 +68,7 @@ final class MainViewModel {
         do {
             let repository = try await gitService.openRepository(at: url)
             currentRepository = repository
-
-            // Add to recent repositories if not already present
-            if !recentRepositories.contains(where: { $0.path == repository.path }) {
-                recentRepositories.insert(repository, at: 0)
-                if recentRepositories.count > 10 {
-                    recentRepositories.removeLast()
-                }
-            }
-
+            addToRecent(repository)
             logger.info("Opened repository: \(repository.name)", category: .git)
         } catch {
             handleError(error)
@@ -88,6 +85,47 @@ final class MainViewModel {
     func refreshRepository() async {
         guard let repo = currentRepository else { return }
         await openRepository(at: repo.path)
+    }
+
+    func cloneRepository(from url: URL, to destination: URL) async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = try await gitService.cloneRepository(from: url, to: destination)
+            currentRepository = repository
+            addToRecent(repository)
+            logger.info("Cloned repository: \(repository.name)", category: .git)
+        } catch {
+            handleError(error)
+        }
+
+        isLoading = false
+    }
+
+    func initRepository(at path: URL, bare: Bool = false) async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = try await gitService.initRepository(at: path, bare: bare)
+            currentRepository = repository
+            addToRecent(repository)
+            logger.info("Initialized repository: \(repository.name)", category: .git)
+        } catch {
+            handleError(error)
+        }
+
+        isLoading = false
+    }
+
+    private func addToRecent(_ repository: Repository) {
+        if !recentRepositories.contains(where: { $0.path == repository.path }) {
+            recentRepositories.insert(repository, at: 0)
+            if recentRepositories.count > 10 {
+                recentRepositories.removeLast()
+            }
+        }
     }
 
     // MARK: - File Dialog

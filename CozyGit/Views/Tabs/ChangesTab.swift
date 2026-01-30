@@ -6,11 +6,16 @@
 import SwiftUI
 
 struct ChangesTab: View {
-    let repository: Repository?
+    @Bindable var viewModel: RepositoryViewModel
+
+    @State private var selectedFile: FileStatus?
 
     var body: some View {
-        if repository != nil {
+        if viewModel.repository != nil {
             changesContent
+                .task {
+                    await viewModel.loadFileStatuses()
+                }
         } else {
             noRepositoryView
         }
@@ -22,102 +27,255 @@ struct ChangesTab: View {
         HSplitView {
             // File List
             VStack(alignment: .leading, spacing: 0) {
-                // Staged Files Section
-                Section {
-                    stagedFilesPlaceholder
-                } header: {
-                    sectionHeader("Staged Changes", count: 0)
+                // Search and Filter Bar
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Search files...", text: $viewModel.searchText)
+                        .textFieldStyle(.plain)
+
+                    Picker("Filter", selection: $viewModel.fileFilter) {
+                        ForEach(RepositoryViewModel.FileFilter.allCases) { filter in
+                            Text(filter.rawValue).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 100)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.bar)
+
+                Divider()
+
+                // Staged Files Section
+                stagedFilesSection
 
                 Divider()
 
                 // Unstaged Files Section
-                Section {
-                    unstagedFilesPlaceholder
-                } header: {
-                    sectionHeader("Unstaged Changes", count: 0)
-                }
+                unstagedFilesSection
             }
-            .frame(minWidth: 250, maxWidth: 350)
+            .frame(minWidth: 280, maxWidth: 400)
 
-            // Diff View
+            // Diff View Placeholder
             VStack {
-                Text("Select a file to view changes")
-                    .foregroundColor(.secondary)
+                if let file = selectedFile {
+                    VStack(spacing: 8) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 32))
+                            .foregroundColor(.secondary)
+                        Text(file.path)
+                            .font(.headline)
+                        Text("Diff preview coming in Phase 3")
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 32))
+                            .foregroundColor(.secondary)
+                        Text("Select a file to view changes")
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    // MARK: - Section Header
+    // MARK: - Staged Files Section
 
-    private func sectionHeader(_ title: String, count: Int) -> some View {
-        HStack {
-            Text(title)
-                .font(.headline)
-            Spacer()
-            Text("\(count)")
-                .font(.caption)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .background(.quaternary)
-                .clipShape(Capsule())
+    private var stagedFilesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("Staged Changes")
+                    .font(.headline)
+                Spacer()
+                Text("\(viewModel.filteredStagedFiles.count)")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(.quaternary)
+                    .clipShape(Capsule())
+
+                if !viewModel.stagedFiles.isEmpty {
+                    Button {
+                        Task {
+                            await viewModel.unstageAllFiles()
+                        }
+                    } label: {
+                        Text("Unstage All")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            // File List
+            if viewModel.filteredStagedFiles.isEmpty {
+                VStack {
+                    Text("No staged changes")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                }
+                .frame(maxWidth: .infinity, minHeight: 60)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(viewModel.filteredStagedFiles) { file in
+                            FileStatusRow(
+                                file: file,
+                                isStaged: true,
+                                onStageToggle: {
+                                    Task {
+                                        await viewModel.unstageFile(file)
+                                    }
+                                }
+                            )
+                            .background(selectedFile?.id == file.id ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .onTapGesture {
+                                selectedFile = file
+                            }
+
+                            if file.id != viewModel.filteredStagedFiles.last?.id {
+                                Divider()
+                                    .padding(.leading, 34)
+                            }
+                        }
+                    }
+                }
+                .frame(minHeight: 60, maxHeight: 200)
+            }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.bar)
     }
 
-    // MARK: - Placeholders
+    // MARK: - Unstaged Files Section
 
-    private var stagedFilesPlaceholder: some View {
-        VStack {
-            Text("No staged changes")
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(minHeight: 100)
-    }
+    private var unstagedFilesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("Unstaged Changes")
+                    .font(.headline)
+                Spacer()
+                Text("\(viewModel.filteredUnstagedFiles.count)")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(.quaternary)
+                    .clipShape(Capsule())
 
-    private var unstagedFilesPlaceholder: some View {
-        VStack {
-            Text("No unstaged changes")
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if !viewModel.unstagedFiles.isEmpty {
+                    Button {
+                        Task {
+                            await viewModel.stageAllFiles()
+                        }
+                    } label: {
+                        Text("Stage All")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            // File List
+            if viewModel.filteredUnstagedFiles.isEmpty {
+                VStack {
+                    if viewModel.unstagedFiles.isEmpty {
+                        Text("No unstaged changes")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    } else {
+                        Text("No files match filter")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(viewModel.filteredUnstagedFiles) { file in
+                            FileStatusRow(
+                                file: file,
+                                isStaged: false,
+                                onStageToggle: {
+                                    Task {
+                                        await viewModel.stageFile(file)
+                                    }
+                                },
+                                onDiscard: {
+                                    Task {
+                                        await viewModel.discardChanges(file)
+                                    }
+                                }
+                            )
+                            .background(selectedFile?.id == file.id ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .onTapGesture {
+                                selectedFile = file
+                            }
+
+                            if file.id != viewModel.filteredUnstagedFiles.last?.id {
+                                Divider()
+                                    .padding(.leading, 34)
+                            }
+                        }
+                    }
+                }
+            }
         }
-        .frame(minHeight: 100)
     }
 
     // MARK: - No Repository View
 
     private var noRepositoryView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "doc.badge.plus")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-
-            Text("No Repository Open")
-                .font(.title3)
-                .fontWeight(.medium)
-
-            Text("Open a repository to view changes")
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EmptyStateView(
+            icon: "doc.badge.plus",
+            title: "No Repository Open",
+            message: "Open a repository to view changes"
+        )
     }
 }
 
 // MARK: - Preview
 
-#Preview("With Repository") {
-    ChangesTab(repository: Repository(
+#Preview("With Changes") {
+    let viewModel = RepositoryViewModel(gitService: DependencyContainer.shared.gitService)
+    viewModel.repository = Repository(
         path: URL(fileURLWithPath: "/Users/test/MyProject"),
         currentBranch: "main"
-    ))
-    .frame(width: 800, height: 500)
+    )
+    viewModel.fileStatuses = [
+        FileStatus(path: "src/main.swift", status: .modified, isStaged: true),
+        FileStatus(path: "README.md", status: .modified, isStaged: false),
+        FileStatus(path: "Package.swift", status: .added, isStaged: false),
+        FileStatus(path: "old-file.txt", status: .deleted, isStaged: false),
+        FileStatus(path: "new-file.swift", status: .untracked, isStaged: false),
+    ]
+    return ChangesTab(viewModel: viewModel)
+        .frame(width: 800, height: 500)
+}
+
+#Preview("No Changes") {
+    let viewModel = RepositoryViewModel(gitService: DependencyContainer.shared.gitService)
+    viewModel.repository = Repository(
+        path: URL(fileURLWithPath: "/Users/test/MyProject"),
+        currentBranch: "main"
+    )
+    return ChangesTab(viewModel: viewModel)
+        .frame(width: 800, height: 500)
 }
 
 #Preview("No Repository") {
-    ChangesTab(repository: nil)
+    let viewModel = RepositoryViewModel(gitService: DependencyContainer.shared.gitService)
+    return ChangesTab(viewModel: viewModel)
         .frame(width: 800, height: 500)
 }

@@ -13,6 +13,7 @@ protocol GitRepositoryServiceProtocol {
     func cloneRepository(from url: URL, to path: URL) async throws -> Repository
     func getStatus() async throws -> [FileStatus]
     func isGitRepository(at path: URL) async -> Bool
+    func getAheadBehindCount() async throws -> RemoteTrackingStatus?
 }
 
 // MARK: - Branch Operations

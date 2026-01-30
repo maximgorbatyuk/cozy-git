@@ -89,6 +89,41 @@ final class GitService: GitServiceProtocol {
         return result.success
     }
 
+    func getAheadBehindCount() async throws -> RemoteTrackingStatus? {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        // Check if branch has an upstream configured
+        let upstreamCheck = await shellExecutor.executeGit(
+            arguments: ["rev-parse", "--abbrev-ref", "@{upstream}"],
+            workingDirectory: repo.path
+        )
+
+        guard upstreamCheck.success else {
+            // No upstream configured
+            return nil
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            return nil
+        }
+
+        let parts = result.output.split(separator: "\t").map { Int($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count >= 2,
+              let behind = parts[0],
+              let ahead = parts[1] else {
+            return nil
+        }
+
+        return RemoteTrackingStatus(ahead: ahead, behind: behind)
+    }
+
     // MARK: - Branch Operations
 
     func listBranches() async throws -> [Branch] {

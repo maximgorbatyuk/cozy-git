@@ -21,6 +21,25 @@ final class RepositoryViewModel {
     var isLoading: Bool = false
     var errorMessage: String?
 
+    // MARK: - Remote Status
+
+    var remoteStatus: RemoteTrackingStatus?
+
+    // MARK: - Filtering
+
+    var searchText: String = ""
+    var fileFilter: FileFilter = .all
+
+    enum FileFilter: String, CaseIterable, Identifiable {
+        case all = "All"
+        case modified = "Modified"
+        case added = "Added"
+        case deleted = "Deleted"
+        case untracked = "Untracked"
+
+        var id: String { rawValue }
+    }
+
     // MARK: - Services
 
     private let gitService: GitService
@@ -44,10 +63,20 @@ final class RepositoryViewModel {
         async let statusTask = loadFileStatuses()
         async let stashTask = loadStashes()
         async let tagsTask = loadTags()
+        async let remoteStatusTask = loadRemoteStatus()
 
-        _ = await (branchesTask, commitsTask, statusTask, stashTask, tagsTask)
+        _ = await (branchesTask, commitsTask, statusTask, stashTask, tagsTask, remoteStatusTask)
 
         isLoading = false
+    }
+
+    func loadRemoteStatus() async {
+        do {
+            remoteStatus = try await gitService.getAheadBehindCount()
+        } catch {
+            // Don't treat this as a critical error
+            remoteStatus = nil
+        }
     }
 
     func loadBranches() async {
@@ -146,6 +175,17 @@ final class RepositoryViewModel {
         } catch {
             handleError(error)
         }
+    }
+
+    func unstageAllFiles() async {
+        for file in stagedFiles {
+            do {
+                try await gitService.unstageFile(path: file.path)
+            } catch {
+                handleError(error)
+            }
+        }
+        await loadFileStatuses()
     }
 
     func discardChanges(_ file: FileStatus) async {
@@ -268,5 +308,45 @@ final class RepositoryViewModel {
 
     var currentBranch: Branch? {
         branches.first { $0.isCurrent }
+    }
+
+    var lastCommit: Commit? {
+        commits.first
+    }
+
+    var filteredUnstagedFiles: [FileStatus] {
+        var filtered = unstagedFiles
+
+        // Apply file filter
+        switch fileFilter {
+        case .all:
+            break
+        case .modified:
+            filtered = filtered.filter { $0.status == .modified }
+        case .added:
+            filtered = filtered.filter { $0.status == .added }
+        case .deleted:
+            filtered = filtered.filter { $0.status == .deleted }
+        case .untracked:
+            filtered = filtered.filter { $0.status == .untracked }
+        }
+
+        // Apply search filter
+        if !searchText.isEmpty {
+            filtered = filtered.filter { file in
+                file.path.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+
+        return filtered
+    }
+
+    var filteredStagedFiles: [FileStatus] {
+        if searchText.isEmpty {
+            return stagedFiles
+        }
+        return stagedFiles.filter { file in
+            file.path.localizedCaseInsensitiveContains(searchText)
+        }
     }
 }

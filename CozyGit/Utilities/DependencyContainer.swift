@@ -47,6 +47,14 @@ final class DependencyContainer {
         return _mainViewModel!
     }
 
+    private var _repositoryViewModel: RepositoryViewModel?
+    var repositoryViewModel: RepositoryViewModel {
+        if _repositoryViewModel == nil {
+            _repositoryViewModel = RepositoryViewModel(gitService: gitService)
+        }
+        return _repositoryViewModel!
+    }
+
     // MARK: - Reset (for testing)
 
     func reset() {
@@ -54,5 +62,6 @@ final class DependencyContainer {
         _gitService = nil
         _logger = nil
         _mainViewModel = nil
+        _repositoryViewModel = nil
     }
 }

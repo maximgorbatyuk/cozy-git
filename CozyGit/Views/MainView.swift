@@ -7,6 +7,7 @@ import SwiftUI
 
 struct MainView: View {
     @State private var viewModel = DependencyContainer.shared.mainViewModel
+    @State private var repositoryViewModel = DependencyContainer.shared.repositoryViewModel
 
     var body: some View {
         NavigationSplitView {
@@ -34,6 +35,32 @@ struct MainView: View {
                     .background(.ultraThinMaterial)
             }
         }
+        .sheet(isPresented: $viewModel.showCloneSheet) {
+            CloneRepositorySheet { url, destination in
+                await viewModel.cloneRepository(from: url, to: destination)
+                if viewModel.currentRepository != nil {
+                    repositoryViewModel.repository = viewModel.currentRepository
+                    await repositoryViewModel.loadAllData()
+                }
+            }
+        }
+        .sheet(isPresented: $viewModel.showInitSheet) {
+            InitRepositorySheet { path, bare in
+                await viewModel.initRepository(at: path, bare: bare)
+                if viewModel.currentRepository != nil {
+                    repositoryViewModel.repository = viewModel.currentRepository
+                    await repositoryViewModel.loadAllData()
+                }
+            }
+        }
+        .onChange(of: viewModel.currentRepository) { _, newRepo in
+            repositoryViewModel.repository = newRepo
+            if newRepo != nil {
+                Task {
+                    await repositoryViewModel.loadAllData()
+                }
+            }
+        }
     }
 
     // MARK: - Detail View
@@ -42,9 +69,9 @@ struct MainView: View {
     private var detailView: some View {
         switch viewModel.selectedTab {
         case .overview:
-            OverviewTab(repository: viewModel.currentRepository)
+            OverviewTab(viewModel: repositoryViewModel)
         case .changes:
-            ChangesTab(repository: viewModel.currentRepository)
+            ChangesTab(viewModel: repositoryViewModel)
         case .branches:
             BranchesTab(repository: viewModel.currentRepository)
         case .history:
@@ -83,6 +110,8 @@ struct MainView: View {
                 Button {
                     Task {
                         await viewModel.refreshRepository()
+                        repositoryViewModel.repository = viewModel.currentRepository
+                        await repositoryViewModel.loadAllData()
                     }
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -112,9 +141,21 @@ struct MainView: View {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
+                Button("Clone Repository...") {
+                    viewModel.showCloneSheet = true
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+
+                Button("Initialize Repository...") {
+                    viewModel.showInitSheet = true
+                }
+
                 if viewModel.currentRepository != nil {
+                    Divider()
+
                     Button("Close Repository") {
                         viewModel.closeRepository()
+                        repositoryViewModel.repository = nil
                     }
                 }
             } label: {
