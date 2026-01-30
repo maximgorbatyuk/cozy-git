@@ -1,0 +1,126 @@
+//
+//  MainViewModel.swift
+//  CozyGit
+//
+
+import Foundation
+import SwiftUI
+
+@MainActor
+@Observable
+final class MainViewModel {
+    // MARK: - Navigation
+
+    enum Tab: String, CaseIterable, Identifiable {
+        case overview = "Overview"
+        case changes = "Changes"
+        case branches = "Branches"
+        case history = "History"
+        case cleanup = "Cleanup"
+        case automate = "Automate"
+
+        var id: String { rawValue }
+
+        var iconName: String {
+            switch self {
+            case .overview: return "house"
+            case .changes: return "doc.badge.plus"
+            case .branches: return "arrow.triangle.branch"
+            case .history: return "clock"
+            case .cleanup: return "trash"
+            case .automate: return "gearshape.2"
+            }
+        }
+    }
+
+    // MARK: - Published State
+
+    var selectedTab: Tab = .overview
+    var currentRepository: Repository?
+    var recentRepositories: [Repository] = []
+    var isLoading: Bool = false
+    var errorMessage: String?
+    var showError: Bool = false
+
+    // MARK: - Services
+
+    private let gitService: GitService
+    private let logger = Logger.shared
+
+    // MARK: - Initialization
+
+    init(gitService: GitService) {
+        self.gitService = gitService
+        logger.info("MainViewModel initialized", category: .app)
+    }
+
+    // MARK: - Repository Management
+
+    func openRepository(at url: URL) async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repository = try await gitService.openRepository(at: url)
+            currentRepository = repository
+
+            // Add to recent repositories if not already present
+            if !recentRepositories.contains(where: { $0.path == repository.path }) {
+                recentRepositories.insert(repository, at: 0)
+                if recentRepositories.count > 10 {
+                    recentRepositories.removeLast()
+                }
+            }
+
+            logger.info("Opened repository: \(repository.name)", category: .git)
+        } catch {
+            handleError(error)
+        }
+
+        isLoading = false
+    }
+
+    func closeRepository() {
+        currentRepository = nil
+        logger.info("Closed repository", category: .git)
+    }
+
+    func refreshRepository() async {
+        guard let repo = currentRepository else { return }
+        await openRepository(at: repo.path)
+    }
+
+    // MARK: - File Dialog
+
+    func showOpenDialog() {
+        let panel = NSOpenPanel()
+        panel.title = "Open Git Repository"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+
+        if panel.runModal() == .OK, let url = panel.url {
+            Task {
+                await openRepository(at: url)
+            }
+        }
+    }
+
+    // MARK: - Error Handling
+
+    private func handleError(_ error: Error) {
+        if let gitError = error as? GitError {
+            errorMessage = gitError.localizedDescription
+        } else {
+            errorMessage = error.localizedDescription
+        }
+        showError = true
+        logger.error("Error: \(errorMessage ?? "Unknown")", category: .app)
+    }
+
+    func dismissError() {
+        showError = false
+        errorMessage = nil
+    }
+}
