@@ -53,6 +53,8 @@ protocol GitRemoteServiceProtocol {
     func pull(remote: String?, branch: String?) async throws
     func pullWithStrategy(remote: String?, branch: String?, strategy: PullStrategy) async throws -> PullResult
     func push(remote: String?, branch: String?, force: Bool) async throws
+    func pushWithOptions(_ options: PushOptions) async throws -> PushResult
+    func pushTags(remote: String?, tags: [String]?) async throws -> PushResult
     func setUpstream(remote: String, branch: String) async throws
 }
 
@@ -73,6 +75,46 @@ protocol GitTagServiceProtocol {
     func deleteTag(name: String) async throws
 }
 
+// MARK: - Merge & Rebase Operations
+
+protocol GitMergeRebaseServiceProtocol {
+    // Merge operations
+    func mergeBranch(_ branch: String, strategy: MergeStrategy, message: String?) async throws -> MergeResult
+    func abortMerge() async throws
+    func continueMerge() async throws -> MergeResult
+
+    // Rebase operations
+    func rebase(onto branch: String) async throws -> RebaseResult
+    func continueRebase() async throws -> RebaseResult
+    func abortRebase() async throws
+    func skipRebaseCommit() async throws -> RebaseResult
+
+    // Operation state
+    func getOperationState() async throws -> OperationState
+    func getConflictedFiles() async throws -> [ConflictedFile]
+
+    // Conflict resolution
+    func acceptCurrentChanges(for path: String) async throws
+    func acceptIncomingChanges(for path: String) async throws
+    func markConflictResolved(for path: String) async throws
+}
+
+// MARK: - Diff Operations
+
+protocol GitDiffServiceProtocol {
+    /// Get diff for working directory changes
+    func getDiff(options: DiffOptions) async throws -> Diff
+
+    /// Get diff for a specific file
+    func getDiffForFile(path: String, staged: Bool) async throws -> FileDiff?
+
+    /// Get diff for a specific commit
+    func getDiffForCommit(hash: String) async throws -> Diff
+
+    /// Get diff between two commits
+    func getDiffBetweenCommits(from: String, to: String) async throws -> Diff
+}
+
 // MARK: - Combined Protocol
 
 protocol GitServiceProtocol: GitRepositoryServiceProtocol,
@@ -80,6 +122,8 @@ protocol GitServiceProtocol: GitRepositoryServiceProtocol,
                               GitCommitServiceProtocol,
                               GitRemoteServiceProtocol,
                               GitStashServiceProtocol,
-                              GitTagServiceProtocol {
+                              GitTagServiceProtocol,
+                              GitMergeRebaseServiceProtocol,
+                              GitDiffServiceProtocol {
     var currentRepository: Repository? { get }
 }

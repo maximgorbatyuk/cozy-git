@@ -314,9 +314,149 @@ final class RepositoryViewModel {
         }
     }
 
+    func pushWithOptions(_ options: PushOptions) async throws -> PushResult {
+        let result = try await gitService.pushWithOptions(options)
+        await loadRemoteStatus()
+        await loadBranches()
+        return result
+    }
+
+    func pushTags(remote: String? = nil, tags: [String]? = nil) async throws -> PushResult {
+        let result = try await gitService.pushTags(remote: remote, tags: tags)
+        await loadTags()
+        return result
+    }
+
     func setUpstream(remote: String, branch: String) async throws {
         try await gitService.setUpstream(remote: remote, branch: branch)
         await loadBranches()
+    }
+
+    // MARK: - Merge Operations
+
+    func mergeBranch(_ branch: String, strategy: MergeStrategy = .merge, message: String? = nil) async throws -> MergeResult {
+        let result = try await gitService.mergeBranch(branch, strategy: strategy, message: message)
+        await loadCommits()
+        await loadFileStatuses()
+        await loadBranches()
+        return result
+    }
+
+    func abortMerge() async throws {
+        try await gitService.abortMerge()
+        await loadFileStatuses()
+        await loadBranches()
+    }
+
+    func continueMerge() async throws -> MergeResult {
+        let result = try await gitService.continueMerge()
+        await loadCommits()
+        await loadFileStatuses()
+        return result
+    }
+
+    // MARK: - Rebase Operations
+
+    func rebase(onto branch: String) async throws -> RebaseResult {
+        let result = try await gitService.rebase(onto: branch)
+        if result.success && !result.hasConflicts {
+            await loadCommits()
+            await loadBranches()
+        }
+        await loadFileStatuses()
+        return result
+    }
+
+    func continueRebase() async throws -> RebaseResult {
+        let result = try await gitService.continueRebase()
+        if result.success && !result.hasConflicts {
+            await loadCommits()
+            await loadBranches()
+        }
+        await loadFileStatuses()
+        return result
+    }
+
+    func abortRebase() async throws {
+        try await gitService.abortRebase()
+        await loadCommits()
+        await loadFileStatuses()
+        await loadBranches()
+    }
+
+    func skipRebaseCommit() async throws -> RebaseResult {
+        let result = try await gitService.skipRebaseCommit()
+        if result.success && !result.hasConflicts {
+            await loadCommits()
+            await loadBranches()
+        }
+        await loadFileStatuses()
+        return result
+    }
+
+    // MARK: - Operation State & Conflicts
+
+    func getOperationState() async -> OperationState {
+        do {
+            return try await gitService.getOperationState()
+        } catch {
+            handleError(error)
+            return .none
+        }
+    }
+
+    func getConflictedFiles() async -> [ConflictedFile] {
+        do {
+            return try await gitService.getConflictedFiles()
+        } catch {
+            handleError(error)
+            return []
+        }
+    }
+
+    func acceptCurrentChanges(for path: String) async throws {
+        try await gitService.acceptCurrentChanges(for: path)
+        await loadFileStatuses()
+    }
+
+    func acceptIncomingChanges(for path: String) async throws {
+        try await gitService.acceptIncomingChanges(for: path)
+        await loadFileStatuses()
+    }
+
+    func markConflictResolved(for path: String) async throws {
+        try await gitService.markConflictResolved(for: path)
+        await loadFileStatuses()
+    }
+
+    // MARK: - Diff Operations
+
+    func getDiff(staged: Bool = false) async -> Diff {
+        do {
+            let options = DiffOptions(staged: staged)
+            return try await gitService.getDiff(options: options)
+        } catch {
+            handleError(error)
+            return Diff()
+        }
+    }
+
+    func getDiffForFile(path: String, staged: Bool = false) async -> FileDiff? {
+        do {
+            return try await gitService.getDiffForFile(path: path, staged: staged)
+        } catch {
+            handleError(error)
+            return nil
+        }
+    }
+
+    func getDiffForCommit(hash: String) async -> Diff {
+        do {
+            return try await gitService.getDiffForCommit(hash: hash)
+        } catch {
+            handleError(error)
+            return Diff()
+        }
     }
 
     // MARK: - Stash Operations

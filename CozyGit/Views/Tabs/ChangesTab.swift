@@ -10,6 +10,8 @@ struct ChangesTab: View {
 
     @State private var selectedFile: FileStatus?
     @State private var showCommitDialog = false
+    @State private var currentDiff: FileDiff?
+    @State private var isLoadingDiff = false
 
     var body: some View {
         if viewModel.repository != nil {
@@ -62,30 +64,56 @@ struct ChangesTab: View {
             }
             .frame(minWidth: 280, maxWidth: 400)
 
-            // Diff View Placeholder
-            VStack {
-                if let file = selectedFile {
-                    VStack(spacing: 8) {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 32))
-                            .foregroundColor(.secondary)
-                        Text(file.path)
-                            .font(.headline)
-                        Text("Diff preview coming in Phase 8")
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.system(size: 32))
-                            .foregroundColor(.secondary)
-                        Text("Select a file to view changes")
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Diff View
+            diffView
         }
+    }
+
+    // MARK: - Diff View
+
+    private var diffView: some View {
+        VStack {
+            if isLoadingDiff {
+                ProgressView("Loading diff...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let diff = currentDiff {
+                UnifiedDiffView(fileDiff: diff)
+            } else if selectedFile != nil {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
+                    Text("No changes to display")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
+                    Text("Select a file to view changes")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onChange(of: selectedFile) { _, newFile in
+            Task {
+                await loadDiff(for: newFile)
+            }
+        }
+    }
+
+    private func loadDiff(for file: FileStatus?) async {
+        guard let file = file else {
+            currentDiff = nil
+            return
+        }
+
+        isLoadingDiff = true
+        currentDiff = await viewModel.getDiffForFile(path: file.path, staged: file.isStaged)
+        isLoadingDiff = false
     }
 
     // MARK: - Staged Files Section

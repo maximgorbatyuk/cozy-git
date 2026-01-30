@@ -15,6 +15,9 @@ struct BranchesTab: View {
     @State private var showDeleteConfirmation = false
     @State private var expandLocalBranches = true
     @State private var expandRemoteBranches = true
+    @State private var showMergeDialog = false
+    @State private var showRebaseDialog = false
+    @State private var operationState: OperationState = .none
 
     var body: some View {
         if viewModel.repository != nil {
@@ -24,6 +27,12 @@ struct BranchesTab: View {
                 }
                 .sheet(isPresented: $showNewBranchDialog) {
                     NewBranchDialog(viewModel: viewModel)
+                }
+                .sheet(isPresented: $showMergeDialog) {
+                    MergeDialog(viewModel: viewModel)
+                }
+                .sheet(isPresented: $showRebaseDialog) {
+                    RebaseDialog(viewModel: viewModel)
                 }
                 .sheet(isPresented: $showDeleteConfirmation) {
                     if let branch = branchToDelete {
@@ -330,6 +339,58 @@ struct BranchesTab: View {
                     }
                 }
 
+                // Merge & Rebase Actions
+                GroupBox("Merge & Rebase") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 12) {
+                            Button {
+                                showMergeDialog = true
+                            } label: {
+                                Label("Merge Branch...", systemImage: "arrow.triangle.merge")
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button {
+                                showRebaseDialog = true
+                            } label: {
+                                Label("Rebase...", systemImage: "arrow.triangle.branch")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        // Operation state indicator
+                        if operationState.isInProgress {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text(operationState.description)
+                                    .font(.caption)
+
+                                Spacer()
+
+                                Button("Abort") {
+                                    Task {
+                                        await abortCurrentOperation()
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(.red)
+                            }
+                            .padding(8)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+
+                        Text("Merge combines branches. Rebase replays commits on a new base.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .task {
+                    operationState = await viewModel.getOperationState()
+                }
+
                 Spacer()
             }
             .padding()
@@ -352,6 +413,28 @@ struct BranchesTab: View {
             return remote
         }
         return remote.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    // MARK: - Actions
+
+    private func abortCurrentOperation() async {
+        switch operationState {
+        case .mergeInProgress:
+            do {
+                try await viewModel.abortMerge()
+            } catch {
+                // Error handled by viewModel
+            }
+        case .rebaseInProgress:
+            do {
+                try await viewModel.abortRebase()
+            } catch {
+                // Error handled by viewModel
+            }
+        case .cherryPickInProgress, .none:
+            break
+        }
+        operationState = await viewModel.getOperationState()
     }
 
     // MARK: - No Repository View

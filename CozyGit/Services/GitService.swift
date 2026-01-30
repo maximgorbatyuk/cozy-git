@@ -624,26 +624,114 @@ final class GitService: GitServiceProtocol {
     }
 
     func push(remote: String? = nil, branch: String? = nil, force: Bool = false) async throws {
+        let options = PushOptions(
+            remote: remote ?? "origin",
+            branch: branch,
+            force: force,
+            forceWithLease: true
+        )
+        _ = try await pushWithOptions(options)
+    }
+
+    func pushWithOptions(_ options: PushOptions) async throws -> PushResult {
         guard let repo = currentRepository else {
             throw GitError.repositoryNotOpen
         }
 
-        var args = ["push"]
-        if force {
-            args.append("--force-with-lease")
-        }
-        if let remote = remote {
-            args.append(remote)
-            if let branch = branch {
-                args.append(branch)
+        var args = ["push", "--verbose"]
+
+        // Force push options
+        if options.force {
+            if options.forceWithLease {
+                args.append("--force-with-lease")
+            } else {
+                args.append("--force")
             }
+        }
+
+        // Set upstream
+        if options.setUpstream {
+            args.append("--set-upstream")
+        }
+
+        // Remote and branch
+        args.append(options.remote)
+        if let branch = options.branch {
+            args.append(branch)
         }
 
         let result = await shellExecutor.executeGit(arguments: args, workingDirectory: repo.path, timeout: 120)
 
-        guard result.success else {
-            throw GitError.commandFailed(result.error ?? "Failed to push")
+        let output = result.output
+        let errorOutput = result.error ?? ""
+        let combinedOutput = output + errorOutput
+
+        // Parse the result
+        let pushResult = parsePushOutput(
+            combinedOutput,
+            success: result.success,
+            wasForcePush: options.force
+        )
+
+        // Push tags if requested
+        if options.pushTags && result.success {
+            let tagResult = try await pushTags(remote: options.remote, tags: options.tags.isEmpty ? nil : options.tags)
+            return PushResult(
+                success: pushResult.success,
+                commitsPushed: pushResult.commitsPushed,
+                remoteBranch: pushResult.remoteBranch,
+                createdRemoteBranch: pushResult.createdRemoteBranch,
+                wasForcePush: pushResult.wasForcePush,
+                tagsPushed: tagResult.tagsPushed,
+                errorMessage: pushResult.errorMessage,
+                rawOutput: pushResult.rawOutput + "\n" + tagResult.rawOutput,
+                wasRejected: pushResult.wasRejected,
+                authenticationFailed: pushResult.authenticationFailed
+            )
         }
+
+        return pushResult
+    }
+
+    func pushTags(remote: String? = nil, tags: [String]? = nil) async throws -> PushResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let remoteName = remote ?? "origin"
+        var args = ["push", remoteName]
+
+        if let specificTags = tags, !specificTags.isEmpty {
+            // Push specific tags
+            for tag in specificTags {
+                args.append("refs/tags/\(tag)")
+            }
+        } else {
+            // Push all tags
+            args.append("--tags")
+        }
+
+        let result = await shellExecutor.executeGit(arguments: args, workingDirectory: repo.path, timeout: 120)
+
+        let combinedOutput = result.output + (result.error ?? "")
+
+        // Count pushed tags
+        let tagsPushed = countPushedTags(combinedOutput)
+
+        if !result.success {
+            return PushResult(
+                success: false,
+                tagsPushed: 0,
+                errorMessage: result.error ?? "Failed to push tags",
+                rawOutput: combinedOutput
+            )
+        }
+
+        return PushResult(
+            success: true,
+            tagsPushed: tagsPushed,
+            rawOutput: combinedOutput
+        )
     }
 
     func setUpstream(remote: String = "origin", branch: String) async throws {
@@ -740,6 +828,106 @@ final class GitService: GitServiceProtocol {
         }
 
         return (filesChanged, insertions, deletions)
+    }
+
+    // MARK: - Push Output Parsing
+
+    private func parsePushOutput(_ output: String, success: Bool, wasForcePush: Bool) -> PushResult {
+        // Check for rejection
+        let wasRejected = output.contains("[rejected]") ||
+                          output.contains("non-fast-forward") ||
+                          output.contains("fetch first") ||
+                          output.contains("Updates were rejected")
+
+        // Check for authentication failure
+        let authFailed = output.contains("Authentication failed") ||
+                         output.contains("Permission denied") ||
+                         output.contains("could not read Username") ||
+                         output.contains("fatal: unable to access")
+
+        // Check if new branch was created
+        let createdRemoteBranch = output.contains("[new branch]") ||
+                                  output.contains("* [new branch]")
+
+        // Parse commits pushed - look for "abc123..def456" pattern
+        var commitsPushed = 0
+        let lines = output.components(separatedBy: .newlines)
+        for line in lines {
+            // Look for lines like "   abc123..def456  main -> main"
+            if line.contains("..") && line.contains("->") {
+                // Try to count commits
+                commitsPushed += 1
+            }
+        }
+
+        // Parse remote branch name
+        var remoteBranch: String?
+        for line in lines {
+            if line.contains("->") {
+                let parts = line.components(separatedBy: "->")
+                if parts.count >= 2 {
+                    remoteBranch = parts[1].trimmingCharacters(in: .whitespaces)
+                    break
+                }
+            }
+        }
+
+        // Extract error message if failed
+        var errorMessage: String?
+        if !success {
+            for line in lines {
+                if line.contains("error:") || line.contains("fatal:") {
+                    errorMessage = line.trimmingCharacters(in: .whitespaces)
+                    break
+                }
+            }
+            if errorMessage == nil && wasRejected {
+                errorMessage = "Push rejected - remote contains changes you don't have locally"
+            }
+            if errorMessage == nil && authFailed {
+                errorMessage = "Authentication failed"
+            }
+        }
+
+        return PushResult(
+            success: success && !wasRejected && !authFailed,
+            commitsPushed: commitsPushed,
+            remoteBranch: remoteBranch,
+            createdRemoteBranch: createdRemoteBranch,
+            wasForcePush: wasForcePush,
+            tagsPushed: 0,
+            errorMessage: errorMessage,
+            rawOutput: output,
+            wasRejected: wasRejected,
+            authenticationFailed: authFailed
+        )
+    }
+
+    private func countPushedTags(_ output: String) -> Int {
+        var count = 0
+        let lines = output.components(separatedBy: .newlines)
+
+        for line in lines {
+            // Look for lines indicating tag push like "* [new tag]" or "refs/tags/"
+            if line.contains("[new tag]") ||
+               (line.contains("->") && line.contains("refs/tags/")) ||
+               (line.contains("->") && !line.contains("refs/heads/") && line.trimmingCharacters(in: .whitespaces).first != " ") {
+                // Check if this is actually a tag (not a branch)
+                if line.contains("[new tag]") {
+                    count += 1
+                }
+            }
+        }
+
+        // If no explicit tag markers, check for "Everything up-to-date" (0 tags)
+        // or try to count from verbose output
+        if count == 0 && !output.contains("Everything up-to-date") {
+            // Count occurrences of tag references
+            let tagMatches = output.components(separatedBy: "refs/tags/").count - 1
+            count = max(0, tagMatches)
+        }
+
+        return count
     }
 
     // MARK: - Stash Operations
@@ -1032,5 +1220,744 @@ final class GitService: GitServiceProtocol {
 
             return Tag(name: parts[0], commitHash: parts[1])
         }
+    }
+
+    // MARK: - Merge Operations
+
+    func mergeBranch(_ branch: String, strategy: MergeStrategy = .merge, message: String? = nil) async throws -> MergeResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        var args = ["merge"]
+
+        // Add strategy flag
+        if let flag = strategy.gitFlag {
+            args.append(flag)
+        }
+
+        // Add custom message for non-fast-forward merges
+        if let message = message, strategy != .fastForwardOnly {
+            args.append("-m")
+            args.append(message)
+        }
+
+        args.append(branch)
+
+        let result = await shellExecutor.executeGit(arguments: args, workingDirectory: repo.path, timeout: 120)
+
+        let output = result.output
+        let errorOutput = result.error ?? ""
+        let combinedOutput = output + errorOutput
+
+        // Check for conflicts
+        let hasConflicts = combinedOutput.contains("CONFLICT") ||
+                          combinedOutput.contains("Automatic merge failed") ||
+                          combinedOutput.contains("fix conflicts")
+
+        let conflictingFiles = parseConflictingFiles(combinedOutput)
+
+        // Parse statistics
+        let stats = parsePullStats(combinedOutput)
+
+        // Check merge type
+        let wasFastForward = combinedOutput.contains("Fast-forward")
+        let mergeCommitCreated = combinedOutput.contains("Merge made by")
+
+        // Check for already up to date
+        let alreadyUpToDate = combinedOutput.contains("Already up to date")
+
+        if !result.success && !hasConflicts {
+            return MergeResult(
+                success: false,
+                sourceBranch: branch,
+                errorMessage: errorOutput.isEmpty ? "Merge failed" : errorOutput,
+                rawOutput: combinedOutput,
+                strategy: strategy
+            )
+        }
+
+        return MergeResult(
+            success: result.success || hasConflicts,
+            wasFastForward: wasFastForward,
+            mergeCommitCreated: mergeCommitCreated,
+            wasSquash: strategy == .squash,
+            commitsMerged: alreadyUpToDate ? 0 : 1,
+            filesChanged: stats.filesChanged,
+            insertions: stats.insertions,
+            deletions: stats.deletions,
+            hasConflicts: hasConflicts,
+            conflictingFiles: conflictingFiles,
+            sourceBranch: branch,
+            rawOutput: combinedOutput,
+            strategy: strategy
+        )
+    }
+
+    func abortMerge() async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["merge", "--abort"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to abort merge")
+        }
+
+        logger.info("Merge aborted", category: .git)
+    }
+
+    func continueMerge() async throws -> MergeResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["merge", "--continue"],
+            workingDirectory: repo.path
+        )
+
+        let combinedOutput = result.output + (result.error ?? "")
+
+        if !result.success {
+            // Check if there are still conflicts
+            let hasConflicts = combinedOutput.contains("CONFLICT") ||
+                              combinedOutput.contains("fix conflicts")
+
+            return MergeResult(
+                success: false,
+                hasConflicts: hasConflicts,
+                conflictingFiles: hasConflicts ? try await getConflictedFiles().map { $0.path } : [],
+                errorMessage: result.error ?? "Failed to continue merge",
+                rawOutput: combinedOutput
+            )
+        }
+
+        return MergeResult(
+            success: true,
+            mergeCommitCreated: true,
+            rawOutput: combinedOutput
+        )
+    }
+
+    // MARK: - Rebase Operations
+
+    func rebase(onto branch: String) async throws -> RebaseResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["rebase", branch],
+            workingDirectory: repo.path,
+            timeout: 120
+        )
+
+        let output = result.output
+        let errorOutput = result.error ?? ""
+        let combinedOutput = output + errorOutput
+
+        // Check for conflicts
+        let hasConflicts = combinedOutput.contains("CONFLICT") ||
+                          combinedOutput.contains("error: could not apply") ||
+                          combinedOutput.contains("fix conflicts")
+
+        let conflictingFiles = parseConflictingFiles(combinedOutput)
+
+        // Check if rebase is in progress
+        let isInProgress = hasConflicts ||
+                          combinedOutput.contains("rebase in progress") ||
+                          combinedOutput.contains("git rebase --continue")
+
+        // Parse progress
+        let (current, total) = parseRebaseProgress(combinedOutput)
+
+        if !result.success && !hasConflicts {
+            return RebaseResult(
+                success: false,
+                hasConflicts: false,
+                isInProgress: false,
+                targetBranch: branch,
+                errorMessage: errorOutput.isEmpty ? "Rebase failed" : errorOutput,
+                rawOutput: combinedOutput
+            )
+        }
+
+        return RebaseResult(
+            success: result.success && !hasConflicts,
+            commitsRebased: total,
+            currentCommit: current,
+            totalCommits: total,
+            hasConflicts: hasConflicts,
+            conflictingFiles: conflictingFiles,
+            isInProgress: isInProgress,
+            targetBranch: branch,
+            rawOutput: combinedOutput
+        )
+    }
+
+    func continueRebase() async throws -> RebaseResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["rebase", "--continue"],
+            workingDirectory: repo.path,
+            timeout: 120
+        )
+
+        let combinedOutput = result.output + (result.error ?? "")
+
+        // Check for more conflicts
+        let hasConflicts = combinedOutput.contains("CONFLICT") ||
+                          combinedOutput.contains("fix conflicts")
+
+        let isInProgress = hasConflicts ||
+                          combinedOutput.contains("rebase in progress")
+
+        if !result.success {
+            return RebaseResult(
+                success: false,
+                hasConflicts: hasConflicts,
+                conflictingFiles: hasConflicts ? try await getConflictedFiles().map { $0.path } : [],
+                isInProgress: isInProgress,
+                errorMessage: result.error ?? "Failed to continue rebase",
+                rawOutput: combinedOutput
+            )
+        }
+
+        return RebaseResult(
+            success: true,
+            isInProgress: false,
+            rawOutput: combinedOutput
+        )
+    }
+
+    func abortRebase() async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["rebase", "--abort"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to abort rebase")
+        }
+
+        logger.info("Rebase aborted", category: .git)
+    }
+
+    func skipRebaseCommit() async throws -> RebaseResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["rebase", "--skip"],
+            workingDirectory: repo.path,
+            timeout: 120
+        )
+
+        let combinedOutput = result.output + (result.error ?? "")
+
+        let hasConflicts = combinedOutput.contains("CONFLICT")
+        let isInProgress = combinedOutput.contains("rebase in progress")
+
+        return RebaseResult(
+            success: result.success && !hasConflicts,
+            hasConflicts: hasConflicts,
+            isInProgress: isInProgress,
+            rawOutput: combinedOutput
+        )
+    }
+
+    // MARK: - Operation State
+
+    func getOperationState() async throws -> OperationState {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let gitDir = repo.path.appendingPathComponent(".git")
+
+        // Check for merge in progress
+        let mergeHeadPath = gitDir.appendingPathComponent("MERGE_HEAD")
+        if FileManager.default.fileExists(atPath: mergeHeadPath.path) {
+            let conflicts = try await getConflictedFiles()
+            return .mergeInProgress(conflictCount: conflicts.count)
+        }
+
+        // Check for rebase in progress
+        let rebaseApplyPath = gitDir.appendingPathComponent("rebase-apply")
+        let rebaseMergePath = gitDir.appendingPathComponent("rebase-merge")
+
+        if FileManager.default.fileExists(atPath: rebaseApplyPath.path) ||
+           FileManager.default.fileExists(atPath: rebaseMergePath.path) {
+            // Try to get progress
+            let (current, total) = try await getRebaseProgress(repo: repo)
+            return .rebaseInProgress(current: current, total: total)
+        }
+
+        // Check for cherry-pick in progress
+        let cherryPickHeadPath = gitDir.appendingPathComponent("CHERRY_PICK_HEAD")
+        if FileManager.default.fileExists(atPath: cherryPickHeadPath.path) {
+            return .cherryPickInProgress
+        }
+
+        return .none
+    }
+
+    func getConflictedFiles() async throws -> [ConflictedFile] {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["status", "--porcelain=v1"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to get status")
+        }
+
+        var conflicts: [ConflictedFile] = []
+
+        for line in result.output.components(separatedBy: .newlines) {
+            guard line.count >= 3 else { continue }
+
+            let statusChars = String(line.prefix(2))
+            let path = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+
+            // Conflict markers: UU, AA, DD, AU, UA, DU, UD
+            let conflictType: ConflictedFile.ConflictType?
+
+            switch statusChars {
+            case "UU":
+                conflictType = .content
+            case "AA":
+                conflictType = .addAdd
+            case "DD":
+                conflictType = .content
+            case "AU", "UA":
+                conflictType = .modifyDelete
+            case "DU", "UD":
+                conflictType = .deleteModify
+            default:
+                conflictType = nil
+            }
+
+            if let type = conflictType {
+                conflicts.append(ConflictedFile(path: path, conflictType: type))
+            }
+        }
+
+        return conflicts
+    }
+
+    // MARK: - Conflict Resolution
+
+    func acceptCurrentChanges(for path: String) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["checkout", "--ours", path],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to accept current changes")
+        }
+
+        // Stage the resolved file
+        try await stageFile(path: path)
+    }
+
+    func acceptIncomingChanges(for path: String) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["checkout", "--theirs", path],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to accept incoming changes")
+        }
+
+        // Stage the resolved file
+        try await stageFile(path: path)
+    }
+
+    func markConflictResolved(for path: String) async throws {
+        try await stageFile(path: path)
+    }
+
+    // MARK: - Private Rebase Helpers
+
+    private func parseRebaseProgress(_ output: String) -> (current: Int, total: Int) {
+        // Look for "Rebasing (X/Y)" pattern
+        let pattern = #"Rebasing \((\d+)/(\d+)\)"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)) {
+            if let currentRange = Range(match.range(at: 1), in: output),
+               let totalRange = Range(match.range(at: 2), in: output),
+               let current = Int(output[currentRange]),
+               let total = Int(output[totalRange]) {
+                return (current, total)
+            }
+        }
+        return (0, 0)
+    }
+
+    private func getRebaseProgress(repo: Repository) async throws -> (current: Int, total: Int) {
+        let gitDir = repo.path.appendingPathComponent(".git")
+
+        // Try rebase-merge first (most common)
+        let rebaseMergePath = gitDir.appendingPathComponent("rebase-merge")
+        if FileManager.default.fileExists(atPath: rebaseMergePath.path) {
+            let msgNumPath = rebaseMergePath.appendingPathComponent("msgnum")
+            let endPath = rebaseMergePath.appendingPathComponent("end")
+
+            if let msgNumData = try? String(contentsOf: msgNumPath),
+               let endData = try? String(contentsOf: endPath),
+               let current = Int(msgNumData.trimmingCharacters(in: .whitespacesAndNewlines)),
+               let total = Int(endData.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return (current, total)
+            }
+        }
+
+        // Try rebase-apply (for am-style rebases)
+        let rebaseApplyPath = gitDir.appendingPathComponent("rebase-apply")
+        if FileManager.default.fileExists(atPath: rebaseApplyPath.path) {
+            let nextPath = rebaseApplyPath.appendingPathComponent("next")
+            let lastPath = rebaseApplyPath.appendingPathComponent("last")
+
+            if let nextData = try? String(contentsOf: nextPath),
+               let lastData = try? String(contentsOf: lastPath),
+               let current = Int(nextData.trimmingCharacters(in: .whitespacesAndNewlines)),
+               let total = Int(lastData.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return (current, total)
+            }
+        }
+
+        return (0, 0)
+    }
+
+    // MARK: - Diff Operations
+
+    func getDiff(options: DiffOptions = DiffOptions()) async throws -> Diff {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        var args = ["diff"]
+
+        // Staged vs unstaged
+        if options.staged {
+            args.append("--cached")
+        }
+
+        // Context lines
+        args.append("-U\(options.contextLines)")
+
+        // Rename detection
+        if options.detectRenames {
+            args.append("-M")
+        }
+
+        // Whitespace options
+        if options.ignoreAllWhitespace {
+            args.append("-w")
+        } else if options.ignoreWhitespace {
+            args.append("-b")
+        }
+
+        // Specific commit
+        if let commit = options.commit {
+            args.append(commit)
+        }
+
+        // Specific file
+        if let filePath = options.filePath {
+            args.append("--")
+            args.append(filePath)
+        }
+
+        let result = await shellExecutor.executeGit(arguments: args, workingDirectory: repo.path)
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to get diff")
+        }
+
+        return parseDiffOutput(result.output)
+    }
+
+    func getDiffForFile(path: String, staged: Bool = false) async throws -> FileDiff? {
+        let options = DiffOptions(staged: staged, filePath: path)
+        let diff = try await getDiff(options: options)
+        return diff.files.first
+    }
+
+    func getDiffForCommit(hash: String) async throws -> Diff {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let args = ["show", "--format=", "-p", hash]
+        let result = await shellExecutor.executeGit(arguments: args, workingDirectory: repo.path)
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to get commit diff")
+        }
+
+        return parseDiffOutput(result.output)
+    }
+
+    func getDiffBetweenCommits(from: String, to: String) async throws -> Diff {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let args = ["diff", from, to]
+        let result = await shellExecutor.executeGit(arguments: args, workingDirectory: repo.path)
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to get diff between commits")
+        }
+
+        return parseDiffOutput(result.output)
+    }
+
+    // MARK: - Diff Parsing
+
+    private func parseDiffOutput(_ output: String) -> Diff {
+        guard !output.isEmpty else {
+            return Diff(rawOutput: output)
+        }
+
+        var files: [FileDiff] = []
+        let lines = output.components(separatedBy: "\n")
+        var currentFileLines: [String] = []
+        var inFileDiff = false
+
+        for line in lines {
+            if line.hasPrefix("diff --git") {
+                // Start of a new file diff
+                if inFileDiff && !currentFileLines.isEmpty {
+                    if let fileDiff = parseFileDiff(currentFileLines) {
+                        files.append(fileDiff)
+                    }
+                }
+                currentFileLines = [line]
+                inFileDiff = true
+            } else if inFileDiff {
+                currentFileLines.append(line)
+            }
+        }
+
+        // Don't forget the last file
+        if inFileDiff && !currentFileLines.isEmpty {
+            if let fileDiff = parseFileDiff(currentFileLines) {
+                files.append(fileDiff)
+            }
+        }
+
+        return Diff(files: files, rawOutput: output)
+    }
+
+    private func parseFileDiff(_ lines: [String]) -> FileDiff? {
+        guard !lines.isEmpty else { return nil }
+
+        var oldPath = ""
+        var newPath = ""
+        var hunks: [DiffHunk] = []
+        var isBinary = false
+        var isNewFile = false
+        var isDeletedFile = false
+        var fileMode: String?
+
+        var currentHunkLines: [String] = []
+        var currentHunkHeader: (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int, header: String?)?
+
+        for line in lines {
+            if line.hasPrefix("diff --git") {
+                // Parse file paths from diff --git a/path b/path
+                let parts = line.components(separatedBy: " ")
+                if parts.count >= 4 {
+                    oldPath = String(parts[2].dropFirst(2)) // Remove "a/"
+                    newPath = String(parts[3].dropFirst(2)) // Remove "b/"
+                }
+            } else if line.hasPrefix("---") {
+                // Old file path
+                let path = String(line.dropFirst(4))
+                if path != "/dev/null" {
+                    oldPath = path.hasPrefix("a/") ? String(path.dropFirst(2)) : path
+                }
+            } else if line.hasPrefix("+++") {
+                // New file path
+                let path = String(line.dropFirst(4))
+                if path != "/dev/null" {
+                    newPath = path.hasPrefix("b/") ? String(path.dropFirst(2)) : path
+                }
+            } else if line.hasPrefix("new file mode") {
+                isNewFile = true
+                fileMode = String(line.dropFirst(14))
+            } else if line.hasPrefix("deleted file mode") {
+                isDeletedFile = true
+                fileMode = String(line.dropFirst(18))
+            } else if line.contains("Binary files") {
+                isBinary = true
+            } else if line.hasPrefix("@@") {
+                // Save previous hunk
+                if let header = currentHunkHeader, !currentHunkLines.isEmpty {
+                    let hunk = createHunk(header: header, lines: currentHunkLines)
+                    hunks.append(hunk)
+                }
+
+                // Parse new hunk header
+                currentHunkHeader = parseHunkHeader(line)
+                currentHunkLines = []
+            } else if currentHunkHeader != nil {
+                // Content line in a hunk
+                currentHunkLines.append(line)
+            }
+        }
+
+        // Save last hunk
+        if let header = currentHunkHeader, !currentHunkLines.isEmpty {
+            let hunk = createHunk(header: header, lines: currentHunkLines)
+            hunks.append(hunk)
+        }
+
+        return FileDiff(
+            oldPath: oldPath,
+            newPath: newPath,
+            hunks: hunks,
+            isBinary: isBinary,
+            isNewFile: isNewFile,
+            isDeletedFile: isDeletedFile,
+            fileMode: fileMode
+        )
+    }
+
+    private func parseHunkHeader(_ line: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int, header: String?)? {
+        // Parse "@@ -1,5 +1,7 @@ optional header"
+        let pattern = #"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)?$"#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
+            return nil
+        }
+
+        func extractInt(_ index: Int) -> Int {
+            guard let range = Range(match.range(at: index), in: line) else { return 1 }
+            return Int(line[range]) ?? 1
+        }
+
+        let oldStart = extractInt(1)
+        let oldCount = match.range(at: 2).location != NSNotFound ? extractInt(2) : 1
+        let newStart = extractInt(3)
+        let newCount = match.range(at: 4).location != NSNotFound ? extractInt(4) : 1
+
+        var header: String?
+        if let headerRange = Range(match.range(at: 5), in: line) {
+            let h = line[headerRange].trimmingCharacters(in: .whitespaces)
+            if !h.isEmpty {
+                header = h
+            }
+        }
+
+        return (oldStart, oldCount, newStart, newCount, header)
+    }
+
+    private func createHunk(
+        header: (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int, header: String?),
+        lines: [String]
+    ) -> DiffHunk {
+        var diffLines: [DiffLine] = []
+        var oldLine = header.oldStart
+        var newLine = header.newStart
+
+        for line in lines {
+            guard !line.isEmpty else { continue }
+
+            let firstChar = line.first
+            let content = String(line.dropFirst())
+
+            switch firstChar {
+            case "+":
+                diffLines.append(DiffLine(
+                    type: .addition,
+                    content: content,
+                    oldLineNumber: nil,
+                    newLineNumber: newLine
+                ))
+                newLine += 1
+
+            case "-":
+                diffLines.append(DiffLine(
+                    type: .deletion,
+                    content: content,
+                    oldLineNumber: oldLine,
+                    newLineNumber: nil
+                ))
+                oldLine += 1
+
+            case " ":
+                diffLines.append(DiffLine(
+                    type: .context,
+                    content: content,
+                    oldLineNumber: oldLine,
+                    newLineNumber: newLine
+                ))
+                oldLine += 1
+                newLine += 1
+
+            case "\\":
+                // "\ No newline at end of file"
+                if let lastLine = diffLines.last {
+                    diffLines[diffLines.count - 1] = DiffLine(
+                        type: lastLine.type,
+                        content: lastLine.content,
+                        oldLineNumber: lastLine.oldLineNumber,
+                        newLineNumber: lastLine.newLineNumber,
+                        hasNewline: false
+                    )
+                }
+
+            default:
+                // Context line without space prefix (shouldn't happen normally)
+                diffLines.append(DiffLine(
+                    type: .context,
+                    content: line,
+                    oldLineNumber: oldLine,
+                    newLineNumber: newLine
+                ))
+                oldLine += 1
+                newLine += 1
+            }
+        }
+
+        return DiffHunk(
+            oldStart: header.oldStart,
+            oldCount: header.oldCount,
+            newStart: header.newStart,
+            newCount: header.newCount,
+            header: header.header,
+            lines: diffLines
+        )
     }
 }

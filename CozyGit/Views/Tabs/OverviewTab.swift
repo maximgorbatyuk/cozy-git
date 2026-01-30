@@ -12,6 +12,7 @@ struct OverviewTab: View {
     @State private var isPulling = false
     @State private var isPushing = false
     @State private var showPullDialog = false
+    @State private var showPushDialog = false
     @State private var fetchResult: FetchResult?
     @State private var lastOperationMessage: String?
     @State private var showOperationResult = false
@@ -25,6 +26,9 @@ struct OverviewTab: View {
                 }
                 .sheet(isPresented: $showPullDialog) {
                     PullOptionsDialog(viewModel: viewModel)
+                }
+                .sheet(isPresented: $showPushDialog) {
+                    PushOptionsDialog(viewModel: viewModel)
                 }
         } else {
             noRepositoryView
@@ -164,9 +168,7 @@ struct OverviewTab: View {
                                 isLoading: isPushing,
                                 badge: viewModel.remoteStatus?.ahead
                             ) {
-                                Task {
-                                    await performPush()
-                                }
+                                showPushDialog = true
                             }
 
                             Spacer()
