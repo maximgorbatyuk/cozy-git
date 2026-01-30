@@ -9,12 +9,16 @@ struct ChangesTab: View {
     @Bindable var viewModel: RepositoryViewModel
 
     @State private var selectedFile: FileStatus?
+    @State private var showCommitDialog = false
 
     var body: some View {
         if viewModel.repository != nil {
             changesContent
                 .task {
                     await viewModel.loadFileStatuses()
+                }
+                .sheet(isPresented: $showCommitDialog) {
+                    CommitDialog(viewModel: viewModel)
                 }
         } else {
             noRepositoryView
@@ -67,7 +71,7 @@ struct ChangesTab: View {
                             .foregroundColor(.secondary)
                         Text(file.path)
                             .font(.headline)
-                        Text("Diff preview coming in Phase 3")
+                        Text("Diff preview coming in Phase 8")
                             .foregroundColor(.secondary)
                     }
                 } else {
@@ -110,6 +114,15 @@ struct ChangesTab: View {
                             .font(.caption)
                     }
                     .buttonStyle(.borderless)
+
+                    Button {
+                        showCommitDialog = true
+                    } label: {
+                        Label("Commit", systemImage: "checkmark.circle")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
             }
             .padding(.horizontal, 12)

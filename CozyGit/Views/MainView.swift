@@ -75,7 +75,7 @@ struct MainView: View {
         case .branches:
             BranchesTab(repository: viewModel.currentRepository)
         case .history:
-            HistoryTab(repository: viewModel.currentRepository)
+            HistoryTab(viewModel: repositoryViewModel)
         case .cleanup:
             CleanupTab(repository: viewModel.currentRepository)
         case .automate:

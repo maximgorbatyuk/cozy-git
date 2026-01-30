@@ -1408,27 +1408,28 @@ protocol GitService: GitRepositoryService,
 |-------|------|----------|--------|--------------|
 | 1 | Project Foundation & Infrastructure | Week 1 | ✅ | None |
 | 2 | Repository Management | Week 2 | ✅ | Phase 1 |
-| 3 | Basic Commit Workflow | Week 3 | ⬜ | Phase 2 |
+| 3 | Basic Commit Workflow | Week 3 | ✅ | Phase 2 |
 | 4 | Branch Management (CGF-1) | Week 4-5 | ⬜ | Phase 3 |
 | 5 | Fetch & Pull Operations | Week 6 | ⬜ | Phase 4 |
 | 6 | Push Operations | Week 7 | ⬜ | Phase 5 |
 | 7 | Merge & Rebase Operations | Week 8 | ⬜ | Phase 6 |
 | 8 | Unified Diff Viewer | Week 9 | ⬜ | Phase 7 |
 | 9 | Side-by-Side Diff Viewer | Week 10-11 | ⬜ | Phase 8 |
-| 10 | Stash Operations | Week 12 | ⬜ | Phase 9 |
-| 11 | Tag Operations | Week 13 | ⬜ | Phase 10 |
-| 12 | Remote Management | Week 14 | ⬜ | Phase 11 |
-| 13 | Advanced Git Operations | Week 15 | ⬜ | Phase 12 |
-| 14 | Submodule Support | Week 16 | ⬜ | Phase 13 |
-| 15 | Ignore File Management | Week 17 | ⬜ | Phase 14 |
-| 16 | Automation System (CGF-2) | Week 18-19 | ⬜ | Phase 15 |
-| 17 | Polish & UX Enhancement | Week 20 | ⬜ | Phase 16 |
-| 18 | Performance Optimization | Week 21 | ⬜ | Phase 17 |
-| 19 | Accessibility & Localization | Week 22 | ⬜ | Phase 18 |
-| 20 | Testing | Week 23-24 | ⬜ | Phase 19 |
-| 21 | Documentation | Week 25 | ⬜ | Phase 20 |
-| 22 | App Store Preparation | Week 26 | ⬜ | Phase 21 |
-| 23 | Post-Launch Support | Ongoing | ⬜ | Phase 22 |
+| 10 | Commit Graph Visualization | Week 12 | ⬜ | Phase 9 |
+| 11 | Stash Operations | Week 13 | ⬜ | Phase 10 |
+| 12 | Tag Operations | Week 14 | ⬜ | Phase 11 |
+| 13 | Remote Management | Week 15 | ⬜ | Phase 12 |
+| 14 | Advanced Git Operations | Week 16 | ⬜ | Phase 13 |
+| 15 | Submodule Support | Week 17 | ⬜ | Phase 14 |
+| 16 | Ignore File Management | Week 18 | ⬜ | Phase 15 |
+| 17 | Automation System (CGF-2) | Week 19-20 | ⬜ | Phase 16 |
+| 18 | Polish & UX Enhancement | Week 21 | ⬜ | Phase 17 |
+| 19 | Performance Optimization | Week 22 | ⬜ | Phase 18 |
+| 20 | Accessibility & Localization | Week 23 | ⬜ | Phase 19 |
+| 21 | Testing | Week 24-25 | ⬜ | Phase 20 |
+| 22 | Documentation | Week 26 | ⬜ | Phase 21 |
+| 23 | App Store Preparation | Week 27 | ⬜ | Phase 22 |
+| 24 | Post-Launch Support | Ongoing | ⬜ | Phase 23 |
 
 **Legend**: ⬜ Not Started | 🔄 In Progress | ✅ Complete | ⏸️ Blocked
 
@@ -1542,60 +1543,60 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 3: Basic Commit Workflow (Week 3)
+### Phase 3: Basic Commit Workflow (Week 3) ✅ DONE
 **Dependencies**: Phase 2
 **Deliverables**: Can create commits with message editor
 
-#### Step 3.1: Stage Operations
-- Implement `stageFiles()` method
-- Implement `unstageFiles()` method
-- Implement `stageAll()` and `unstageAll()`
-- Handle staging deleted files
-- Test with various file types
+#### Step 3.1: Stage Operations ✅ DONE
+- Implement `stageFiles()` method ✅
+- Implement `unstageFiles()` method ✅
+- Implement `stageAll()` and `unstageAll()` ✅
+- Handle staging deleted files ✅
+- Test with various file types ✅
 
-#### Step 3.2: Commit Operations
-- Implement `createCommit()` method
-- Add support for staged files only
-- Handle empty message validation
-- Implement commit error handling
-- Add pre-commit hook support placeholder
+#### Step 3.2: Commit Operations ✅ DONE
+- Implement `createCommit()` method ✅
+- Add support for staged files only ✅
+- Handle empty message validation ✅
+- Implement commit error handling ✅
+- Add pre-commit hook support placeholder ✅
 
-#### Step 3.3: Commit Dialog UI
-- Design commit message editor
-- Add character/line count
-- Implement commit button
-- Add cancel button
-- Show staged files summary
-- Add "Amend" checkbox (disabled for now)
+#### Step 3.3: Commit Dialog UI ✅ DONE
+- Design commit message editor ✅
+- Add character/line count ✅
+- Implement commit button ✅
+- Add cancel button ✅
+- Show staged files summary ✅
+- Add "Amend" checkbox (disabled for now) ✅
 
-#### Step 3.4: Integration with Changes Tab
-- Connect commit dialog to Changes tab
-- Pass staged files to commit
-- Display commit success/error feedback
-- Update file status after commit
-- Clear message on success
+#### Step 3.4: Integration with Changes Tab ✅ DONE
+- Connect commit dialog to Changes tab ✅
+- Pass staged files to commit ✅
+- Display commit success/error feedback ✅
+- Update file status after commit ✅
+- Clear message on success ✅
 
-#### Step 3.5: Commit History - Basic
-- Implement `getCommitHistory()` method
-- Parse git log output
-- Create basic commit list display
-- Show commit hash, message, author, date
-- Implement pagination (load more on scroll)
+#### Step 3.5: Commit History - Basic ✅ DONE
+- Implement `getCommitHistory()` method ✅
+- Parse git log output ✅
+- Create basic commit list display ✅
+- Show commit hash, message, author, date ✅
+- Implement pagination (load more on scroll) ✅
 
-#### Step 3.6: History Tab UI
-- Build commit list with `List` view
-- Add search/filter functionality
-- Implement commit detail view (sheet)
-- Show commit full message
-- Display affected files list
+#### Step 3.6: History Tab UI ✅ DONE
+- Build commit list with `List` view ✅
+- Add search/filter functionality ✅
+- Implement commit detail view (sheet) ✅
+- Show commit full message ✅
+- Display affected files list ✅
 
 **Completion Criteria**:
-- [ ] Can stage/unstage files
-- [ ] Can create commits with messages
-- [ ] Commit history displays correctly
-- [ ] Can view commit details
-- [ ] Errors handled gracefully
-- [ ] UI updates after operations
+- [x] Can stage/unstage files ✅
+- [x] Can create commits with messages ✅
+- [x] Commit history displays correctly ✅
+- [x] Can view commit details ✅
+- [x] Errors handled gracefully ✅
+- [x] UI updates after operations ✅
 
 ---
 
@@ -2034,11 +2035,107 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 10: Stash Operations (Week 12)
+### Phase 10: Commit Graph Visualization (Week 12)
 **Dependencies**: Phase 9
+**Deliverables**: Visual branch/commit graph with parallel vertical lines like Fork/GitKraken
+
+#### Step 10.1: Graph Data Model
+- Create `CommitGraphNode` model with position (row, column)
+- Create `GraphConnection` model for lines between nodes
+- Track parent/child relationships for each commit
+- Identify branch lanes (columns) for parallel branches
+- Handle merge commits with multiple parents
+- Sort commits topologically
+
+#### Step 10.2: Lane Assignment Algorithm
+- Implement lane assignment for branches
+- Assign columns to parallel branches
+- Minimize lane crossings
+- Handle branch starts and ends
+- Handle merge and branch points
+- Reuse lanes when branches end
+
+#### Step 10.3: Graph Renderer
+- Create `CommitGraphView` SwiftUI view
+- Draw vertical lane lines (parallel colored lines)
+- Draw commit nodes as circles on lanes
+- Draw connection lines between commits
+- Use bezier curves for merges crossing lanes
+- Color-code lanes by branch
+
+#### Step 10.4: Graph Line Types
+- Straight vertical lines for linear history
+- Curved lines for merges (bezier paths)
+- Dotted lines for branch start points
+- Multiple incoming lines for merge commits
+- Color transitions at merge points
+
+#### Step 10.5: Commit Node Rendering
+- Draw commit circles on graph lanes
+- Highlight HEAD commit
+- Mark merge commits (multiple parents)
+- Mark branch/tag commits with indicators
+- Show tooltips on hover with commit info
+- Handle selection state
+
+#### Step 10.6: Integration with History Tab
+- Replace simple commit list with graph view
+- Keep commit details panel on right side
+- Synchronize graph selection with details
+- Maintain search/filter functionality
+- Filter graph to show matching commits
+
+#### Step 10.7: Branch Colors
+- Assign consistent colors to branches
+- Use distinct colors for main, develop, feature branches
+- Color lane lines by branch
+- Color commit nodes by branch
+- Add legend or branch labels
+
+#### Step 10.8: Graph Navigation
+- Scroll graph smoothly
+- Implement virtual scrolling for large histories
+- Jump to specific commit by hash
+- Navigate to HEAD/branch tips
+- Keyboard navigation (up/down arrows)
+
+#### Step 10.9: Graph Interactions
+- Click commit to select and show details
+- Double-click to open full commit view
+- Right-click context menu (checkout, cherry-pick, etc.)
+- Hover to highlight related commits
+- Drag to scroll
+
+#### Step 10.10: Performance Optimization
+- Render only visible graph portion
+- Cache lane calculations
+- Lazy render commit nodes
+- Optimize for 10,000+ commit histories
+- Use Metal/Core Animation for smooth rendering
+
+#### Step 10.11: Graph Settings
+- Toggle compact/expanded view
+- Show/hide remote branches
+- Show/hide tags on graph
+- Adjust lane spacing
+- Toggle branch labels
+
+**Completion Criteria**:
+- [ ] Graph displays parallel branch lanes correctly
+- [ ] Commit nodes positioned on correct lanes
+- [ ] Merge lines curve smoothly between lanes
+- [ ] Branch colors are consistent and distinct
+- [ ] Selection syncs with commit details
+- [ ] Performance acceptable for large repos
+- [ ] Navigation is smooth and intuitive
+
+---
+
+### Phase 11: Stash Operations (Week 13)
+**Dependencies**: Phase 10
 **Deliverables**: Can create, view, and apply stashes
 
-#### Step 10.1: Stash Operations
+#### Step 11.1: Stash Operations
 - Implement `createStash(message:)` method
 - Implement `listStashes()` method
 - Implement `applyStash(index:)` method
@@ -2046,39 +2143,39 @@ protocol GitService: GitRepositoryService,
 - Implement `dropStash(index:)` method
 - Parse stash list output
 
-#### Step 10.2: Stash Models
+#### Step 11.2: Stash Models
 - Create `Stash` model
 - Store stash message, branch, date
 - Include commit reference
 - Handle stash index tracking
 
-#### Step 10.3: Stash Tab UI
+#### Step 11.3: Stash Tab UI
 - Build Stash tab view
 - Create stash list with metadata
 - Show stash message preview
 - Display stash date and branch
 - Add stash icons
 
-#### Step 10.4: Stash Actions
+#### Step 11.4: Stash Actions
 - Add "Create Stash" button with message input
 - Add "Apply" button per stash
 - Add "Pop" button (apply + drop)
 - Add "Drop" button with confirmation
 - Add "Show Diff" action
 
-#### Step 10.5: Stash Diff Preview
+#### Step 11.5: Stash Diff Preview
 - Implement stash diff viewing
 - Show stashed changes in unified view
 - Show stashed changes in side-by-side view
 - Use existing diff viewer
 
-#### Step 10.6: Stash Options
+#### Step 11.6: Stash Options
 - Add "Include untracked" checkbox
 - Add "Keep index" option
 - Add stash message editor
 - Implement stash validation
 
-#### Step 10.7: Integration
+#### Step 11.7: Integration
 - Add "Stash Changes" button to Changes tab
 - Show stash count indicator
 - Auto-show conflicts on stash apply
@@ -2094,8 +2191,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 11: Tag Operations (Week 13)
-**Dependencies**: Phase 10
+### Phase 12: Tag Operations (Week 14)
+**Dependencies**: Phase 11
 **Deliverables**: Can create and manage tags
 
 #### Step 11.1: Tag Operations
@@ -2151,8 +2248,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 12: Remote Management (Week 14)
-**Dependencies**: Phase 11
+### Phase 13: Remote Management (Week 15)
+**Dependencies**: Phase 12
 **Deliverables**: Can manage repository remotes
 
 #### Step 12.1: Remote Operations
@@ -2203,8 +2300,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 13: Advanced Git Operations (Week 15)
-**Dependencies**: Phase 12
+### Phase 14: Advanced Git Operations (Week 16)
+**Dependencies**: Phase 13
 **Deliverables**: Reset, cherry-pick, revert, blame operations
 
 #### Step 13.1: Reset Operations
@@ -2275,8 +2372,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 14: Submodule Support (Week 16)
-**Dependencies**: Phase 13
+### Phase 15: Submodule Support (Week 17)
+**Dependencies**: Phase 14
 **Deliverables**: Can manage git submodules
 
 #### Step 14.1: Submodule Operations
@@ -2328,8 +2425,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 15: Ignore File Management (Week 17)
-**Dependencies**: Phase 14
+### Phase 16: Ignore File Management (Week 18)
+**Dependencies**: Phase 15
 **Deliverables**: Can manage .gitignore files
 
 #### Step 15.1: Ignore Operations
@@ -2371,8 +2468,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 16: Automation System (CGF-2) (Week 18-19)
-**Dependencies**: Phase 15
+### Phase 17: Automation System (CGF-2) (Week 19-20)
+**Dependencies**: Phase 16
 **Deliverables**: Commit prefixes and script hooks
 
 #### Step 16.1: Commit Prefix System
@@ -2457,8 +2554,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 17: Polish & UX Enhancement (Week 20)
-**Dependencies**: Phase 16
+### Phase 18: Polish & UX Enhancement (Week 21)
+**Dependencies**: Phase 17
 **Deliverables**: Polished, production-ready UI
 
 #### Step 17.1: Design Guidelines Consistency
@@ -2530,8 +2627,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 18: Performance Optimization (Week 21)
-**Dependencies**: Phase 17
+### Phase 19: Performance Optimization (Week 22)
+**Dependencies**: Phase 18
 **Deliverables**: Optimized performance for large repositories
 
 #### Step 18.1: Profiling
@@ -2594,8 +2691,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 19: Accessibility & Localization (Week 22)
-**Dependencies**: Phase 18
+### Phase 20: Accessibility & Localization (Week 23)
+**Dependencies**: Phase 19
 **Deliverables**: Accessible and localizable app
 
 #### Step 19.1: Accessibility Labels
@@ -2647,8 +2744,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 20: Testing (Week 23-24)
-**Dependencies**: Phase 19
+### Phase 21: Testing (Week 24-25)
+**Dependencies**: Phase 20
 **Deliverables**: Comprehensive test coverage
 
 #### Step 20.1: Unit Tests Setup
@@ -2713,8 +2810,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 21: Documentation (Week 25)
-**Dependencies**: Phase 20
+### Phase 22: Documentation (Week 26)
+**Dependencies**: Phase 21
 **Deliverables**: Complete documentation
 
 #### Step 21.1: User Documentation
@@ -2761,8 +2858,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 22: App Store Preparation (Week 26)
-**Dependencies**: Phase 21
+### Phase 23: App Store Preparation (Week 27)
+**Dependencies**: Phase 22
 **Deliverables**: Ready for App Store submission
 
 #### Step 22.1: App Store Connect Setup
@@ -2818,8 +2915,8 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 23: Post-Launch Support (Ongoing)
-**Dependencies**: Phase 22
+### Phase 24: Post-Launch Support (Ongoing)
+**Dependencies**: Phase 23
 **Deliverables**: Ongoing maintenance and updates
 
 #### Step 23.1: Monitoring
@@ -2872,29 +2969,30 @@ protocol GitService: GitRepositoryService,
 |-------|----------|------------------|--------------|--------|
 | 1 | Week 1 | App skeleton, architecture | None | ✅ DONE |
 | 2 | Week 2 | Repo management, status display | Phase 1 | ✅ DONE |
-| 3 | Week 3 | Commit workflow | Phase 2 | ⬜ |
+| 3 | Week 3 | Commit workflow | Phase 2 | ✅ DONE |
 | 4 | Week 4-5 | Branch management, CGF-1 | Phase 3 | ⬜ |
 | 5 | Week 6 | Fetch & Pull | Phase 4 | ⬜ |
 | 6 | Week 7 | Push operations | Phase 5 | ⬜ |
 | 7 | Week 8 | Merge & Rebase | Phase 6 | ⬜ |
 | 8 | Week 9 | Unified diff viewer | Phase 7 | ⬜ |
 | 9 | Week 10-11 | Side-by-side diff | Phase 8 | ⬜ |
-| 10 | Week 12 | Stash operations | Phase 9 | ⬜ |
-| 11 | Week 13 | Tag operations | Phase 10 | ⬜ |
-| 12 | Week 14 | Remote management | Phase 11 | ⬜ |
-| 13 | Week 15 | Advanced Git ops | Phase 12 | ⬜ |
-| 14 | Week 16 | Submodule support | Phase 13 | ⬜ |
-| 15 | Week 17 | .gitignore management | Phase 14 | ⬜ |
-| 16 | Week 18-19 | Automation, CGF-2 | Phase 15 | ⬜ |
-| 17 | Week 20 | Polish & UX | Phase 16 | ⬜ |
-| 18 | Week 21 | Performance | Phase 17 | ⬜ |
-| 19 | Week 22 | Accessibility & i18n | Phase 18 | ⬜ |
-| 20 | Week 23-24 | Testing | Phase 19 | ⬜ |
-| 21 | Week 25 | Documentation | Phase 20 | ⬜ |
-| 22 | Week 26 | App Store prep | Phase 21 | ⬜ |
-| 23 | Ongoing | Support & updates | Phase 22 | ⬜ |
+| 10 | Week 12 | Commit graph visualization | Phase 9 | ⬜ |
+| 11 | Week 13 | Stash operations | Phase 10 | ⬜ |
+| 12 | Week 14 | Tag operations | Phase 11 | ⬜ |
+| 13 | Week 15 | Remote management | Phase 12 | ⬜ |
+| 14 | Week 16 | Advanced Git ops | Phase 13 | ⬜ |
+| 15 | Week 17 | Submodule support | Phase 14 | ⬜ |
+| 16 | Week 18 | .gitignore management | Phase 15 | ⬜ |
+| 17 | Week 19-20 | Automation, CGF-2 | Phase 16 | ⬜ |
+| 18 | Week 21 | Polish & UX | Phase 17 | ⬜ |
+| 19 | Week 22 | Performance | Phase 18 | ⬜ |
+| 20 | Week 23 | Accessibility & i18n | Phase 19 | ⬜ |
+| 21 | Week 24-25 | Testing | Phase 20 | ⬜ |
+| 22 | Week 26 | Documentation | Phase 21 | ⬜ |
+| 23 | Week 27 | App Store prep | Phase 22 | ⬜ |
+| 24 | Ongoing | Support & updates | Phase 23 | ⬜ |
 
-**Total Development Time**: ~6 months for full feature set, plus ongoing support
+**Total Development Time**: ~7 months for full feature set (27 weeks), plus ongoing support
 
 ---
 
@@ -3526,8 +3624,7 @@ struct RepositoryPreferences {
 ## Future Enhancements
 
 ### Advanced Visualizations
-- Enhanced visual branch graph with merge indicators
-- Commit graph with 3D rendering option
+- Commit graph with 3D rendering option (enhancement to Phase 10)
 - Repository heatmap (activity visualization)
 - Contributor statistics dashboard
 - File change frequency visualization

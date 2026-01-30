@@ -6,11 +6,23 @@
 import SwiftUI
 
 struct HistoryTab: View {
-    let repository: Repository?
+    @Bindable var viewModel: RepositoryViewModel
+
+    @State private var searchText: String = ""
+    @State private var selectedCommit: Commit?
+    @State private var showCommitDetail = false
 
     var body: some View {
-        if repository != nil {
+        if viewModel.repository != nil {
             historyContent
+                .task {
+                    await viewModel.loadCommits(limit: 100)
+                }
+                .sheet(isPresented: $showCommitDetail) {
+                    if let commit = selectedCommit {
+                        CommitDetailSheet(commit: commit)
+                    }
+                }
         } else {
             noRepositoryView
         }
@@ -22,73 +34,506 @@ struct HistoryTab: View {
         HSplitView {
             // Commit List
             VStack(alignment: .leading, spacing: 0) {
-                // Search/Filter Bar
-                HStack {
+                // Search Bar
+                HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
-                    Text("Search commits...")
-                        .foregroundColor(.secondary)
-                    Spacer()
+                    TextField("Search commits...", text: $searchText)
+                        .textFieldStyle(.plain)
+
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .padding(8)
-                .background(.quaternary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.bar)
 
                 Divider()
 
-                // Commit List Placeholder
-                commitListPlaceholder
-            }
-            .frame(minWidth: 300, maxWidth: 400)
+                // Commit List
+                if filteredCommits.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 32))
+                            .foregroundColor(.secondary)
+                        if searchText.isEmpty {
+                            Text("No commits yet")
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("No commits match '\(searchText)'")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(filteredCommits) { commit in
+                                CommitRow(
+                                    commit: commit,
+                                    isSelected: selectedCommit?.id == commit.id
+                                )
+                                .onTapGesture {
+                                    selectedCommit = commit
+                                }
+                                .onTapGesture(count: 2) {
+                                    selectedCommit = commit
+                                    showCommitDetail = true
+                                }
 
-            // Commit Details
-            VStack {
-                Text("Select a commit to view details")
-                    .foregroundColor(.secondary)
+                                if commit.id != filteredCommits.last?.id {
+                                    Divider()
+                                        .padding(.leading, 50)
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minWidth: 350, maxWidth: 500)
+
+            // Commit Details Preview
+            if let commit = selectedCommit {
+                commitPreview(commit)
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
+                    Text("Select a commit to view details")
+                        .foregroundColor(.secondary)
+                    Text("Double-click to open full details")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
-    // MARK: - Placeholders
+    // MARK: - Commit Preview
 
-    private var commitListPlaceholder: some View {
-        VStack {
-            Text("No commits to display")
-                .foregroundColor(.secondary)
+    private func commitPreview(_ commit: Commit) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(commit.message)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .textSelection(.enabled)
+
+                    HStack {
+                        Label(commit.shortHash, systemImage: "number")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+
+                        Spacer()
+
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(commit.hash, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Copy full hash")
+                    }
+                }
+
+                Divider()
+
+                // Author Info
+                GroupBox("Author") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        LabeledContent("Name", value: commit.author)
+                        LabeledContent("Email", value: commit.authorEmail)
+                        LabeledContent("Date", value: commit.date.formatted(date: .long, time: .shortened))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // Committer Info (if different)
+                if commit.committer != commit.author {
+                    GroupBox("Committer") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            LabeledContent("Name", value: commit.committer)
+                            LabeledContent("Email", value: commit.committerEmail)
+                            LabeledContent("Date", value: commit.committerDate.formatted(date: .long, time: .shortened))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                // Parents
+                if !commit.parents.isEmpty {
+                    GroupBox("Parents") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(commit.parents, id: \.self) { parent in
+                                Text(String(parent.prefix(7)))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                // Refs
+                if !commit.refs.isEmpty {
+                    GroupBox("References") {
+                        FlowLayout(spacing: 6) {
+                            ForEach(commit.refs, id: \.self) { ref in
+                                Text(ref)
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(refColor(for: ref).opacity(0.2))
+                                    .foregroundColor(refColor(for: ref))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                Spacer()
+
+                // View Full Details Button
+                Button {
+                    showCommitDetail = true
+                } label: {
+                    Label("View Full Details", systemImage: "arrow.up.forward.square")
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func refColor(for ref: String) -> Color {
+        if ref.contains("HEAD") {
+            return .purple
+        } else if ref.contains("tag:") {
+            return .orange
+        } else if ref.contains("origin/") {
+            return .blue
+        } else {
+            return .green
+        }
+    }
+
+    // MARK: - Filtered Commits
+
+    private var filteredCommits: [Commit] {
+        if searchText.isEmpty {
+            return viewModel.commits
+        }
+        let query = searchText.lowercased()
+        return viewModel.commits.filter { commit in
+            commit.message.lowercased().contains(query) ||
+            commit.author.lowercased().contains(query) ||
+            commit.hash.lowercased().contains(query) ||
+            commit.shortHash.lowercased().contains(query)
+        }
     }
 
     // MARK: - No Repository View
 
     private var noRepositoryView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "clock")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
+        EmptyStateView(
+            icon: "clock",
+            title: "No Repository Open",
+            message: "Open a repository to view commit history"
+        )
+    }
+}
 
-            Text("No Repository Open")
-                .font(.title3)
-                .fontWeight(.medium)
+// MARK: - Commit Row
 
-            Text("Open a repository to view commit history")
-                .foregroundColor(.secondary)
+private struct CommitRow: View {
+    let commit: Commit
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            // Commit indicator
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 10, height: 10)
+                .padding(.top, 5)
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Message
+                Text(commit.message.components(separatedBy: .newlines).first ?? commit.message)
+                    .lineLimit(1)
+                    .fontWeight(.medium)
+
+                // Metadata
+                HStack(spacing: 8) {
+                    Text(commit.shortHash)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+
+                    Text(commit.author)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Text(commit.date.formatted(.relative(presentation: .named)))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                // Refs
+                if !commit.refs.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(commit.refs.prefix(3), id: \.self) { ref in
+                            Text(ref)
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                        if commit.refs.count > 3 {
+                            Text("+\(commit.refs.count - 3)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Commit Detail Sheet
+
+private struct CommitDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let commit: Commit
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Commit Details")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Full Hash
+                    GroupBox("Commit Hash") {
+                        HStack {
+                            Text(commit.hash)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                            Spacer()
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(commit.hash, forType: .string)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    // Full Message
+                    GroupBox("Message") {
+                        Text(commit.message)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    // Author
+                    GroupBox("Author") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            LabeledContent("Name", value: commit.author)
+                            LabeledContent("Email", value: commit.authorEmail)
+                            LabeledContent("Date", value: commit.date.formatted(date: .complete, time: .complete))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    // Committer
+                    if commit.committer != commit.author || commit.committerDate != commit.date {
+                        GroupBox("Committer") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                LabeledContent("Name", value: commit.committer)
+                                LabeledContent("Email", value: commit.committerEmail)
+                                LabeledContent("Date", value: commit.committerDate.formatted(date: .complete, time: .complete))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+
+                    // Parents
+                    if !commit.parents.isEmpty {
+                        GroupBox("Parent Commits") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(commit.parents, id: \.self) { parent in
+                                    Text(parent)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .textSelection(.enabled)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+
+                    // References
+                    if !commit.refs.isEmpty {
+                        GroupBox("References") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(commit.refs, id: \.self) { ref in
+                                    Text(ref)
+                                        .font(.caption)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+
+                    // Placeholder for affected files (would need git show --name-status)
+                    GroupBox("Changed Files") {
+                        Text("File list will be available in Phase 8 (Diff Viewer)")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding()
+            }
+
+            Divider()
+
+            // Footer
+            HStack {
+                Spacer()
+                Button("Close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+        }
+        .frame(width: 600, height: 500)
+    }
+}
+
+// MARK: - Flow Layout Helper
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = FlowResult(in: proposal.width ?? 0, subviews: subviews, spacing: spacing)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = FlowResult(in: bounds.width, subviews: subviews, spacing: spacing)
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX + result.positions[index].x,
+                                      y: bounds.minY + result.positions[index].y),
+                         proposal: .unspecified)
+        }
+    }
+
+    struct FlowResult {
+        var size: CGSize = .zero
+        var positions: [CGPoint] = []
+
+        init(in maxWidth: CGFloat, subviews: Subviews, spacing: CGFloat) {
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var rowHeight: CGFloat = 0
+
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+                if x + size.width > maxWidth && x > 0 {
+                    x = 0
+                    y += rowHeight + spacing
+                    rowHeight = 0
+                }
+                positions.append(CGPoint(x: x, y: y))
+                rowHeight = max(rowHeight, size.height)
+                x += size.width + spacing
+                self.size.width = max(self.size.width, x)
+            }
+            self.size.height = y + rowHeight
+        }
     }
 }
 
 // MARK: - Preview
 
-#Preview("With Repository") {
-    HistoryTab(repository: Repository(
+#Preview("With Commits") {
+    let viewModel = RepositoryViewModel(gitService: DependencyContainer.shared.gitService)
+    viewModel.repository = Repository(
         path: URL(fileURLWithPath: "/Users/test/MyProject"),
         currentBranch: "main"
-    ))
-    .frame(width: 800, height: 500)
+    )
+    viewModel.commits = [
+        Commit(
+            hash: "abc123def456789012345678901234567890abcd",
+            message: "Add new feature for user authentication",
+            author: "John Doe",
+            authorEmail: "john@example.com",
+            date: Date().addingTimeInterval(-3600),
+            refs: ["HEAD -> main", "origin/main"]
+        ),
+        Commit(
+            hash: "def456abc789012345678901234567890abcdef",
+            message: "Fix bug in login validation",
+            author: "Jane Smith",
+            authorEmail: "jane@example.com",
+            date: Date().addingTimeInterval(-86400)
+        ),
+        Commit(
+            hash: "789012def456abc345678901234567890abcdef",
+            message: "Update dependencies",
+            author: "John Doe",
+            authorEmail: "john@example.com",
+            date: Date().addingTimeInterval(-172800)
+        ),
+    ]
+    return HistoryTab(viewModel: viewModel)
+        .frame(width: 900, height: 600)
 }
 
 #Preview("No Repository") {
-    HistoryTab(repository: nil)
-        .frame(width: 800, height: 500)
+    let viewModel = RepositoryViewModel(gitService: DependencyContainer.shared.gitService)
+    return HistoryTab(viewModel: viewModel)
+        .frame(width: 900, height: 600)
 }
