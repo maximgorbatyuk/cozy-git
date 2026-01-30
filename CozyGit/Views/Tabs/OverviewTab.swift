@@ -11,6 +11,10 @@ struct OverviewTab: View {
     @State private var isFetching = false
     @State private var isPulling = false
     @State private var isPushing = false
+    @State private var showPullDialog = false
+    @State private var fetchResult: FetchResult?
+    @State private var lastOperationMessage: String?
+    @State private var showOperationResult = false
 
     var body: some View {
         if let repository = viewModel.repository {
@@ -18,6 +22,9 @@ struct OverviewTab: View {
                 .task {
                     await viewModel.loadRemoteStatus()
                     await viewModel.loadCommits(limit: 1)
+                }
+                .sheet(isPresented: $showPullDialog) {
+                    PullOptionsDialog(viewModel: viewModel)
                 }
         } else {
             noRepositoryView
@@ -54,6 +61,22 @@ struct OverviewTab: View {
                             Spacer()
                             RemoteStatusView(status: viewModel.remoteStatus)
                         }
+
+                        // Show sync status message
+                        if let status = viewModel.remoteStatus, status.hasChanges {
+                            HStack(spacing: 16) {
+                                if status.behind > 0 {
+                                    Label("\(status.behind) commit\(status.behind == 1 ? "" : "s") to pull", systemImage: "arrow.down")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                                if status.ahead > 0 {
+                                    Label("\(status.ahead) commit\(status.ahead == 1 ? "" : "s") to push", systemImage: "arrow.up")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -62,14 +85,23 @@ struct OverviewTab: View {
                 if let commit = viewModel.lastCommit {
                     GroupBox("Last Commit") {
                         VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(commit.shortHash)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(commit.date.formatted(.relative(presentation: .named)))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
                             Text(commit.message)
                                 .lineLimit(2)
 
                             HStack {
-                                Text(commit.author)
+                                Image(systemName: "person.circle")
                                     .foregroundColor(.secondary)
-                                Spacer()
-                                Text(commit.date.formatted(date: .abbreviated, time: .shortened))
+                                Text(commit.author)
                                     .foregroundColor(.secondary)
                             }
                             .font(.caption)
@@ -104,50 +136,143 @@ struct OverviewTab: View {
 
                 // Quick Actions Card
                 GroupBox("Quick Actions") {
-                    HStack(spacing: 12) {
-                        ActionButton(
-                            title: "Fetch",
-                            icon: "arrow.down.circle",
-                            isLoading: isFetching
-                        ) {
-                            Task {
-                                isFetching = true
-                                await viewModel.fetch(prune: true)
-                                await viewModel.loadRemoteStatus()
-                                isFetching = false
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 12) {
+                            ActionButton(
+                                title: "Fetch",
+                                icon: "arrow.down.circle",
+                                isLoading: isFetching,
+                                badge: nil
+                            ) {
+                                Task {
+                                    await performFetch()
+                                }
                             }
+
+                            ActionButton(
+                                title: "Pull",
+                                icon: "arrow.down.doc",
+                                isLoading: isPulling,
+                                badge: viewModel.remoteStatus?.behind
+                            ) {
+                                showPullDialog = true
+                            }
+
+                            ActionButton(
+                                title: "Push",
+                                icon: "arrow.up.doc",
+                                isLoading: isPushing,
+                                badge: viewModel.remoteStatus?.ahead
+                            ) {
+                                Task {
+                                    await performPush()
+                                }
+                            }
+
+                            Spacer()
                         }
 
-                        ActionButton(
-                            title: "Pull",
-                            icon: "arrow.down.doc",
-                            isLoading: isPulling
-                        ) {
-                            Task {
-                                isPulling = true
-                                await viewModel.pull()
-                                await viewModel.loadRemoteStatus()
-                                isPulling = false
+                        // Operation Result
+                        if let message = lastOperationMessage {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text(message)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Button {
+                                    lastOperationMessage = nil
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
                             }
-                        }
-
-                        ActionButton(
-                            title: "Push",
-                            icon: "arrow.up.doc",
-                            isLoading: isPushing
-                        ) {
-                            Task {
-                                isPushing = true
-                                await viewModel.push()
-                                await viewModel.loadRemoteStatus()
-                                isPushing = false
-                            }
+                            .padding(8)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(6)
                         }
                     }
                 }
+
+                // Working Directory Status
+                workingDirectoryStatus
             }
             .padding()
         }
+    }
+
+    // MARK: - Working Directory Status
+
+    private var workingDirectoryStatus: some View {
+        GroupBox("Working Directory") {
+            VStack(alignment: .leading, spacing: 8) {
+                if viewModel.fileStatuses.isEmpty {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Clean working directory")
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    let staged = viewModel.stagedFiles.count
+                    let unstaged = viewModel.unstagedFiles.count
+
+                    HStack(spacing: 16) {
+                        if staged > 0 {
+                            Label("\(staged) staged", systemImage: "checkmark.circle")
+                                .foregroundColor(.green)
+                        }
+                        if unstaged > 0 {
+                            Label("\(unstaged) unstaged", systemImage: "pencil.circle")
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    .font(.caption)
+
+                    Button {
+                        DependencyContainer.shared.mainViewModel.selectedTab = .changes
+                    } label: {
+                        Text("View Changes")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.link)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .task {
+            await viewModel.loadFileStatuses()
+        }
+    }
+
+    // MARK: - Actions
+
+    private func performFetch() async {
+        isFetching = true
+        lastOperationMessage = nil
+
+        let result = await viewModel.fetchWithResult(prune: true)
+
+        if result.success {
+            lastOperationMessage = result.summary
+        }
+
+        isFetching = false
+    }
+
+    private func performPush() async {
+        isPushing = true
+        lastOperationMessage = nil
+
+        await viewModel.push()
+
+        if viewModel.errorMessage == nil {
+            lastOperationMessage = "Push successful"
+        }
+
+        isPushing = false
     }
 
     // MARK: - No Repository View
@@ -170,18 +295,33 @@ private struct ActionButton: View {
     let title: String
     let icon: String
     var isLoading: Bool = false
+    var badge: Int? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(height: 24)
-                } else {
-                    Image(systemName: icon)
-                        .font(.title2)
+                ZStack(alignment: .topTrailing) {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(height: 24)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.title2)
+                    }
+
+                    // Badge
+                    if let count = badge, count > 0, !isLoading {
+                        Text("\(count)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor)
+                            .clipShape(Capsule())
+                            .offset(x: 8, y: -8)
+                    }
                 }
                 Text(title)
                     .font(.caption)
@@ -205,9 +345,18 @@ private struct ActionButton: View {
             Remote(name: "origin", fetchURL: URL(string: "https://github.com/test/repo.git"))
         ]
     )
-    viewModel.remoteStatus = RemoteTrackingStatus(ahead: 2, behind: 1)
+    viewModel.remoteStatus = RemoteTrackingStatus(ahead: 2, behind: 3)
+    viewModel.commits = [
+        Commit(
+            hash: "abc123def456",
+            message: "Add new feature for authentication",
+            author: "John Doe",
+            authorEmail: "john@example.com",
+            date: Date().addingTimeInterval(-3600)
+        )
+    ]
     return OverviewTab(viewModel: viewModel)
-        .frame(width: 600, height: 500)
+        .frame(width: 600, height: 600)
 }
 
 #Preview("No Repository") {

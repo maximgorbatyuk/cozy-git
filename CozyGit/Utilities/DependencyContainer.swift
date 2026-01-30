@@ -55,6 +55,16 @@ final class DependencyContainer {
         return _repositoryViewModel!
     }
 
+    // MARK: - Auto-Fetch Service
+
+    private var _autoFetchService: AutoFetchService?
+    var autoFetchService: AutoFetchService {
+        if _autoFetchService == nil {
+            _autoFetchService = AutoFetchService()
+        }
+        return _autoFetchService!
+    }
+
     // MARK: - Reset (for testing)
 
     func reset() {
@@ -63,5 +73,6 @@ final class DependencyContainer {
         _logger = nil
         _mainViewModel = nil
         _repositoryViewModel = nil
+        _autoFetchService = nil
     }
 }

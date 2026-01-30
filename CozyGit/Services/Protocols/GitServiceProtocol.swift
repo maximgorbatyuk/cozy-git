@@ -23,9 +23,11 @@ protocol GitBranchServiceProtocol {
     func createBranch(name: String, from: String?) async throws -> Branch
     func checkoutBranch(name: String) async throws
     func deleteBranch(name: String, force: Bool) async throws
+    func deleteRemoteBranch(name: String, remote: String) async throws
     func renameBranch(oldName: String, newName: String) async throws
     func getCurrentBranch() async throws -> String?
     func getMergedBranches(into baseBranch: String) async throws -> [Branch]
+    func getStaleBranches(olderThanDays: Int) async throws -> [Branch]
 }
 
 // MARK: - Commit Operations
@@ -47,8 +49,11 @@ protocol GitRemoteServiceProtocol {
     func addRemote(name: String, url: URL) async throws
     func removeRemote(name: String) async throws
     func fetch(remote: String?, prune: Bool) async throws
+    func fetchWithResult(remote: String?, prune: Bool) async throws -> FetchResult
     func pull(remote: String?, branch: String?) async throws
+    func pullWithStrategy(remote: String?, branch: String?, strategy: PullStrategy) async throws -> PullResult
     func push(remote: String?, branch: String?, force: Bool) async throws
+    func setUpstream(remote: String, branch: String) async throws
 }
 
 // MARK: - Stash Operations

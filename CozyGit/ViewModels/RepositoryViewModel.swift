@@ -121,21 +121,31 @@ final class RepositoryViewModel {
 
     // MARK: - Branch Operations
 
-    func createBranch(name: String, from: String? = nil) async {
-        do {
-            _ = try await gitService.createBranch(name: name, from: from)
-            await loadBranches()
-        } catch {
-            handleError(error)
-        }
+    func createBranch(name: String, from: String? = nil) async throws -> Branch {
+        let branch = try await gitService.createBranch(name: name, from: from)
+        await loadBranches()
+        return branch
     }
 
     func checkoutBranch(_ branch: Branch) async {
         do {
             try await gitService.checkoutBranch(name: branch.name)
             await loadBranches()
+            // Update current branch in repository
+            if let currentBranch = try? await gitService.getCurrentBranch() {
+                repository?.currentBranch = currentBranch
+            }
         } catch {
             handleError(error)
+        }
+    }
+
+    func checkoutBranch(name: String) async throws {
+        try await gitService.checkoutBranch(name: name)
+        await loadBranches()
+        // Update current branch in repository
+        if let currentBranch = try? await gitService.getCurrentBranch() {
+            repository?.currentBranch = currentBranch
         }
     }
 
@@ -145,6 +155,49 @@ final class RepositoryViewModel {
             await loadBranches()
         } catch {
             handleError(error)
+        }
+    }
+
+    func deleteBranch(_ branch: Branch, force: Bool = false, deleteRemote: Bool = false) async throws {
+        try await gitService.deleteBranch(name: branch.name, force: force)
+
+        if deleteRemote, let tracking = branch.trackingBranch {
+            // Extract remote name and branch name from tracking branch (e.g., "origin/feature/x")
+            let parts = tracking.split(separator: "/", maxSplits: 1)
+            if parts.count == 2 {
+                let remote = String(parts[0])
+                let remoteBranchName = String(parts[1])
+                try await gitService.deleteRemoteBranch(name: remoteBranchName, remote: remote)
+            }
+        }
+
+        await loadBranches()
+    }
+
+    func renameBranch(_ branch: Branch, newName: String) async {
+        do {
+            try await gitService.renameBranch(oldName: branch.name, newName: newName)
+            await loadBranches()
+        } catch {
+            handleError(error)
+        }
+    }
+
+    func getMergedBranches(into baseBranch: String) async -> [Branch] {
+        do {
+            return try await gitService.getMergedBranches(into: baseBranch)
+        } catch {
+            handleError(error)
+            return []
+        }
+    }
+
+    func getStaleBranches(olderThanDays: Int = 90) async -> [Branch] {
+        do {
+            return try await gitService.getStaleBranches(olderThanDays: olderThanDays)
+        } catch {
+            handleError(error)
+            return []
         }
     }
 
@@ -215,8 +268,21 @@ final class RepositoryViewModel {
         do {
             try await gitService.fetch(prune: prune)
             await loadBranches()
+            await loadRemoteStatus()
         } catch {
             handleError(error)
+        }
+    }
+
+    func fetchWithResult(prune: Bool = false) async -> FetchResult {
+        do {
+            let result = try await gitService.fetchWithResult(remote: nil, prune: prune)
+            await loadBranches()
+            await loadRemoteStatus()
+            return result
+        } catch {
+            handleError(error)
+            return FetchResult(success: false, errorMessage: error.localizedDescription)
         }
     }
 
@@ -225,17 +291,32 @@ final class RepositoryViewModel {
             try await gitService.pull()
             await loadCommits()
             await loadFileStatuses()
+            await loadRemoteStatus()
         } catch {
             handleError(error)
         }
     }
 
+    func pullWithStrategy(remote: String? = nil, branch: String? = nil, strategy: PullStrategy = .merge) async throws -> PullResult {
+        let result = try await gitService.pullWithStrategy(remote: remote, branch: branch, strategy: strategy)
+        await loadCommits()
+        await loadFileStatuses()
+        await loadRemoteStatus()
+        return result
+    }
+
     func push(force: Bool = false) async {
         do {
             try await gitService.push(force: force)
+            await loadRemoteStatus()
         } catch {
             handleError(error)
         }
+    }
+
+    func setUpstream(remote: String, branch: String) async throws {
+        try await gitService.setUpstream(remote: remote, branch: branch)
+        await loadBranches()
     }
 
     // MARK: - Stash Operations

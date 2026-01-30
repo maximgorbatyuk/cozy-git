@@ -245,6 +245,93 @@ final class GitService: GitServiceProtocol {
             .map { Branch(name: $0, isMerged: true) }
     }
 
+    func getStaleBranches(olderThanDays: Int = 90) async throws -> [Branch] {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        // Get branch info with last commit date
+        let result = await shellExecutor.executeGit(
+            arguments: [
+                "for-each-ref",
+                "--sort=-committerdate",
+                "--format=%(refname:short)|%(committerdate:iso8601)|%(objectname:short)",
+                "refs/heads/"
+            ],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to get branch dates")
+        }
+
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -olderThanDays, to: Date()) ?? Date()
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var staleBranches: [Branch] = []
+
+        for line in result.output.components(separatedBy: .newlines) {
+            let parts = line.split(separator: "|", maxSplits: 2)
+            guard parts.count >= 2 else { continue }
+
+            let branchName = String(parts[0])
+            let dateString = String(parts[1]).trimmingCharacters(in: .whitespaces)
+
+            // Parse date (format: 2024-01-15 10:30:45 +0000)
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withFullDate, .withTime, .withSpaceBetweenDateAndTime, .withTimeZone]
+
+            // Try multiple date formats
+            var branchDate: Date?
+            if let date = isoFormatter.date(from: dateString.replacingOccurrences(of: " ", with: "T")) {
+                branchDate = date
+            } else {
+                // Fallback: parse manually
+                let components = dateString.split(separator: " ")
+                if components.count >= 2 {
+                    let simpleDateString = "\(components[0])T\(components[1])Z"
+                    branchDate = isoFormatter.date(from: simpleDateString)
+                }
+            }
+
+            if let date = branchDate, date < cutoffDate {
+                var branch = Branch(name: branchName, isLocal: true)
+                branch = Branch(
+                    name: branchName,
+                    isLocal: true,
+                    isRemote: false,
+                    isCurrent: false,
+                    lastCommit: nil,
+                    isMerged: false,
+                    isProtected: false,
+                    commitCount: 0,
+                    upstream: nil
+                )
+                staleBranches.append(branch)
+            }
+        }
+
+        return staleBranches
+    }
+
+    func deleteRemoteBranch(name: String, remote: String = "origin") async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["push", remote, "--delete", name],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to delete remote branch")
+        }
+
+        logger.info("Deleted remote branch: \(remote)/\(name)", category: .git)
+    }
+
     // MARK: - Commit Operations
 
     func getHistory(limit: Int = 50, branch: String? = nil) async throws -> [Commit] {
@@ -427,11 +514,15 @@ final class GitService: GitServiceProtocol {
     }
 
     func fetch(remote: String? = nil, prune: Bool = false) async throws {
+        _ = try await fetchWithResult(remote: remote, prune: prune)
+    }
+
+    func fetchWithResult(remote: String? = nil, prune: Bool = false) async throws -> FetchResult {
         guard let repo = currentRepository else {
             throw GitError.repositoryNotOpen
         }
 
-        var args = ["fetch"]
+        var args = ["fetch", "--verbose"]
         if let remote = remote {
             args.append(remote)
         } else {
@@ -443,17 +534,42 @@ final class GitService: GitServiceProtocol {
 
         let result = await shellExecutor.executeGit(arguments: args, workingDirectory: repo.path, timeout: 120)
 
-        guard result.success else {
-            throw GitError.commandFailed(result.error ?? "Failed to fetch")
+        if !result.success {
+            return FetchResult(
+                success: false,
+                errorMessage: result.error ?? "Failed to fetch",
+                rawOutput: result.output
+            )
         }
+
+        // Parse fetch output for updated branches
+        let output = result.output + (result.error ?? "") // git fetch outputs to stderr
+        let updatedBranches = parseFetchOutput(output)
+
+        return FetchResult(
+            newCommits: 0, // Would need additional parsing
+            updatedBranches: updatedBranches,
+            success: true,
+            rawOutput: output
+        )
     }
 
     func pull(remote: String? = nil, branch: String? = nil) async throws {
+        _ = try await pullWithStrategy(remote: remote, branch: branch, strategy: .merge)
+    }
+
+    func pullWithStrategy(remote: String? = nil, branch: String? = nil, strategy: PullStrategy = .merge) async throws -> PullResult {
         guard let repo = currentRepository else {
             throw GitError.repositoryNotOpen
         }
 
         var args = ["pull"]
+
+        // Add strategy flag
+        if let flag = strategy.gitFlag {
+            args.append(flag)
+        }
+
         if let remote = remote {
             args.append(remote)
             if let branch = branch {
@@ -463,9 +579,48 @@ final class GitService: GitServiceProtocol {
 
         let result = await shellExecutor.executeGit(arguments: args, workingDirectory: repo.path, timeout: 120)
 
-        guard result.success else {
-            throw GitError.commandFailed(result.error ?? "Failed to pull")
+        let output = result.output
+        let errorOutput = result.error ?? ""
+        let combinedOutput = output + errorOutput
+
+        // Check for conflicts
+        let hasConflicts = combinedOutput.contains("CONFLICT") ||
+                          combinedOutput.contains("Automatic merge failed") ||
+                          combinedOutput.contains("error: could not apply")
+
+        let conflictingFiles = parseConflictingFiles(combinedOutput)
+
+        // Parse statistics
+        let stats = parsePullStats(combinedOutput)
+
+        // Check for fast-forward
+        let wasFastForward = combinedOutput.contains("Fast-forward")
+
+        // Check for merge commit
+        let mergeCommitCreated = combinedOutput.contains("Merge made by")
+
+        if !result.success && !hasConflicts {
+            return PullResult(
+                success: false,
+                hasConflicts: false,
+                errorMessage: errorOutput.isEmpty ? "Failed to pull" : errorOutput,
+                rawOutput: combinedOutput,
+                strategy: strategy
+            )
         }
+
+        return PullResult(
+            success: result.success || hasConflicts,
+            filesChanged: stats.filesChanged,
+            insertions: stats.insertions,
+            deletions: stats.deletions,
+            hasConflicts: hasConflicts,
+            conflictingFiles: conflictingFiles,
+            mergeCommitCreated: mergeCommitCreated,
+            wasFastForward: wasFastForward,
+            rawOutput: combinedOutput,
+            strategy: strategy
+        )
     }
 
     func push(remote: String? = nil, branch: String? = nil, force: Bool = false) async throws {
@@ -489,6 +644,102 @@ final class GitService: GitServiceProtocol {
         guard result.success else {
             throw GitError.commandFailed(result.error ?? "Failed to push")
         }
+    }
+
+    func setUpstream(remote: String = "origin", branch: String) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["branch", "--set-upstream-to=\(remote)/\(branch)", branch],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to set upstream")
+        }
+    }
+
+    // MARK: - Fetch/Pull Output Parsing
+
+    private func parseFetchOutput(_ output: String) -> [String] {
+        var updatedBranches: [String] = []
+        let lines = output.components(separatedBy: .newlines)
+
+        for line in lines {
+            // Look for lines like "   abc123..def456  main       -> origin/main"
+            if line.contains("->") && (line.contains("..") || line.contains("[new branch]") || line.contains("[new tag]")) {
+                let parts = line.components(separatedBy: "->")
+                if parts.count >= 2 {
+                    let branch = parts[1].trimmingCharacters(in: .whitespaces)
+                    updatedBranches.append(branch)
+                }
+            }
+        }
+
+        return updatedBranches
+    }
+
+    private func parseConflictingFiles(_ output: String) -> [String] {
+        var files: [String] = []
+        let lines = output.components(separatedBy: .newlines)
+
+        for line in lines {
+            // Look for "CONFLICT (content): Merge conflict in <file>"
+            if line.contains("CONFLICT") && line.contains("Merge conflict in") {
+                if let range = line.range(of: "Merge conflict in ") {
+                    let file = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+                    files.append(file)
+                }
+            }
+            // Also look for "U<tab>filename" in status-like output
+            if line.hasPrefix("U\t") || line.hasPrefix("UU ") {
+                let file = line.dropFirst(2).trimmingCharacters(in: .whitespaces)
+                files.append(file)
+            }
+        }
+
+        return files
+    }
+
+    private func parsePullStats(_ output: String) -> (filesChanged: Int, insertions: Int, deletions: Int) {
+        var filesChanged = 0
+        var insertions = 0
+        var deletions = 0
+
+        let lines = output.components(separatedBy: .newlines)
+
+        for line in lines {
+            // Look for "X files changed, Y insertions(+), Z deletions(-)"
+            if line.contains("changed") && (line.contains("insertion") || line.contains("deletion")) {
+                // Parse files changed
+                if let filesMatch = line.range(of: #"(\d+) files? changed"#, options: .regularExpression) {
+                    let match = line[filesMatch]
+                    if let num = Int(match.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()) {
+                        filesChanged = num
+                    }
+                }
+
+                // Parse insertions
+                if let insertMatch = line.range(of: #"(\d+) insertions?"#, options: .regularExpression) {
+                    let match = line[insertMatch]
+                    if let num = Int(match.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()) {
+                        insertions = num
+                    }
+                }
+
+                // Parse deletions
+                if let deleteMatch = line.range(of: #"(\d+) deletions?"#, options: .regularExpression) {
+                    let match = line[deleteMatch]
+                    if let num = Int(match.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()) {
+                        deletions = num
+                    }
+                }
+            }
+        }
+
+        return (filesChanged, insertions, deletions)
     }
 
     // MARK: - Stash Operations
