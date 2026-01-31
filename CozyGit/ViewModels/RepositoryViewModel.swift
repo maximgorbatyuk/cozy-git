@@ -18,6 +18,7 @@ final class RepositoryViewModel {
     var stashes: [Stash] = []
     var tags: [Tag] = []
     var remotes: [Remote] = []
+    var submodules: [Submodule] = []
 
     var isLoading: Bool = false
     var errorMessage: String?
@@ -65,9 +66,10 @@ final class RepositoryViewModel {
         async let stashTask = loadStashes()
         async let tagsTask = loadTags()
         async let remotesTask = loadRemotes()
+        async let submodulesTask = loadSubmodules()
         async let remoteStatusTask = loadRemoteStatus()
 
-        _ = await (branchesTask, commitsTask, statusTask, stashTask, tagsTask, remotesTask, remoteStatusTask)
+        _ = await (branchesTask, commitsTask, statusTask, stashTask, tagsTask, remotesTask, submodulesTask, remoteStatusTask)
 
         isLoading = false
     }
@@ -129,6 +131,15 @@ final class RepositoryViewModel {
         }
     }
 
+    func loadSubmodules() async {
+        do {
+            submodules = try await gitService.listSubmodules()
+        } catch {
+            // Don't treat this as a critical error - some repos don't have submodules
+            submodules = []
+        }
+    }
+
     // MARK: - Remote Management
 
     func addRemote(name: String, url: URL) async throws {
@@ -151,6 +162,42 @@ final class RepositoryViewModel {
             handleError(error)
             return FetchResult(success: false, errorMessage: error.localizedDescription)
         }
+    }
+
+    // MARK: - Submodule Management
+
+    func addSubmodule(url: URL, path: String, branch: String?) async throws {
+        try await gitService.addSubmodule(url: url, path: path, branch: branch)
+        await loadSubmodules()
+        await loadFileStatuses()
+    }
+
+    func initSubmodule(_ submodule: Submodule) async throws {
+        try await gitService.initSubmodule(path: submodule.path)
+        await loadSubmodules()
+    }
+
+    func updateSubmodule(_ submodule: Submodule, recursive: Bool = false) async throws -> SubmoduleUpdateResult {
+        let result = try await gitService.updateSubmodule(path: submodule.path, recursive: recursive)
+        await loadSubmodules()
+        return result
+    }
+
+    func updateAllSubmodules(recursive: Bool = true, initialize: Bool = true) async throws -> [SubmoduleUpdateResult] {
+        let results = try await gitService.updateSubmodules(recursive: recursive, init: initialize)
+        await loadSubmodules()
+        return results
+    }
+
+    func removeSubmodule(_ submodule: Submodule) async throws {
+        try await gitService.removeSubmodule(path: submodule.path)
+        await loadSubmodules()
+        await loadFileStatuses()
+    }
+
+    func syncSubmodules() async throws {
+        try await gitService.syncSubmodules()
+        await loadSubmodules()
     }
 
     // MARK: - Branch Operations

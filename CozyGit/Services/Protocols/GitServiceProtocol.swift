@@ -137,6 +137,18 @@ protocol GitAdvancedOperationsProtocol {
     func blame(file: String) async throws -> BlameInfo
 }
 
+// MARK: - Submodule Operations
+
+protocol GitSubmoduleServiceProtocol {
+    func listSubmodules() async throws -> [Submodule]
+    func addSubmodule(url: URL, path: String, branch: String?) async throws
+    func initSubmodule(path: String?) async throws
+    func updateSubmodules(recursive: Bool, init: Bool) async throws -> [SubmoduleUpdateResult]
+    func updateSubmodule(path: String, recursive: Bool) async throws -> SubmoduleUpdateResult
+    func removeSubmodule(path: String) async throws
+    func syncSubmodules() async throws
+}
+
 // MARK: - Combined Protocol
 
 protocol GitServiceProtocol: GitRepositoryServiceProtocol,
@@ -147,6 +159,7 @@ protocol GitServiceProtocol: GitRepositoryServiceProtocol,
                               GitTagServiceProtocol,
                               GitMergeRebaseServiceProtocol,
                               GitDiffServiceProtocol,
-                              GitAdvancedOperationsProtocol {
+                              GitAdvancedOperationsProtocol,
+                              GitSubmoduleServiceProtocol {
     var currentRepository: Repository? { get }
 }

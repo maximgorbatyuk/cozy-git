@@ -2279,4 +2279,243 @@ final class GitService: GitServiceProtocol {
 
         return BlameInfo(filePath: filePath, lines: lines, commits: commits)
     }
+
+    // MARK: - Submodule Operations
+
+    func listSubmodules() async throws -> [Submodule] {
+        guard let repo = currentRepository else {
+            return []
+        }
+
+        // First, check if there are any submodules configured
+        let statusResult = await shellExecutor.executeGit(
+            arguments: ["submodule", "status"],
+            workingDirectory: repo.path
+        )
+
+        guard statusResult.success else {
+            return []
+        }
+
+        let output = statusResult.output
+        if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return []
+        }
+
+        var submodules: [Submodule] = []
+
+        // Parse submodule status output
+        // Format: " <commit> <path> (<branch>)" or "-<commit> <path>" (not initialized)
+        let lines = output.components(separatedBy: "\n")
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+
+            let isInitialized = !trimmed.hasPrefix("-")
+            let hasChanges = trimmed.hasPrefix("+")
+
+            // Remove status prefix
+            var cleanLine = trimmed
+            if cleanLine.hasPrefix("-") || cleanLine.hasPrefix("+") || cleanLine.hasPrefix(" ") {
+                cleanLine = String(cleanLine.dropFirst())
+            }
+
+            let parts = cleanLine.split(separator: " ", maxSplits: 2)
+            guard parts.count >= 2 else { continue }
+
+            let commitHash = String(parts[0])
+            let path = String(parts[1])
+
+            // Extract branch if present (in parentheses)
+            var branch: String?
+            if parts.count > 2 {
+                let branchPart = String(parts[2])
+                if branchPart.hasPrefix("(") && branchPart.hasSuffix(")") {
+                    branch = String(branchPart.dropFirst().dropLast())
+                }
+            }
+
+            // Get URL from .gitmodules
+            let url = await getSubmoduleURL(path: path, repo: repo)
+
+            let submodule = Submodule(
+                name: path.components(separatedBy: "/").last ?? path,
+                path: path,
+                url: url,
+                branch: branch,
+                commitHash: commitHash,
+                isInitialized: isInitialized,
+                hasChanges: hasChanges
+            )
+            submodules.append(submodule)
+        }
+
+        return submodules
+    }
+
+    private func getSubmoduleURL(path: String, repo: Repository) async -> URL? {
+        let result = await shellExecutor.executeGit(
+            arguments: ["config", "--file", ".gitmodules", "submodule.\(path).url"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else { return nil }
+
+        let urlString = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return URL(string: urlString)
+    }
+
+    func addSubmodule(url: URL, path: String, branch: String?) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        var arguments = ["submodule", "add"]
+
+        if let branch = branch {
+            arguments.append(contentsOf: ["-b", branch])
+        }
+
+        arguments.append(url.absoluteString)
+        arguments.append(path)
+
+        let result = await shellExecutor.executeGit(
+            arguments: arguments,
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to add submodule")
+        }
+    }
+
+    func initSubmodule(path: String?) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        var arguments = ["submodule", "init"]
+
+        if let path = path {
+            arguments.append(path)
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: arguments,
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to initialize submodule")
+        }
+    }
+
+    func updateSubmodules(recursive: Bool, init initSubmodules: Bool) async throws -> [SubmoduleUpdateResult] {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        var arguments = ["submodule", "update"]
+
+        if initSubmodules {
+            arguments.append("--init")
+        }
+
+        if recursive {
+            arguments.append("--recursive")
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: arguments,
+            workingDirectory: repo.path,
+            timeout: 120  // Longer timeout for submodule updates
+        )
+
+        if result.success {
+            // Get updated submodules to return their status
+            let submodules = try await listSubmodules()
+            return submodules.map { submodule in
+                SubmoduleUpdateResult.success(path: submodule.path, commit: submodule.commitHash)
+            }
+        } else {
+            return [SubmoduleUpdateResult.failure(path: "*", error: result.error ?? "Failed to update submodules")]
+        }
+    }
+
+    func updateSubmodule(path: String, recursive: Bool) async throws -> SubmoduleUpdateResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        var arguments = ["submodule", "update"]
+
+        if recursive {
+            arguments.append("--recursive")
+        }
+
+        arguments.append("--")
+        arguments.append(path)
+
+        let result = await shellExecutor.executeGit(
+            arguments: arguments,
+            workingDirectory: repo.path,
+            timeout: 120
+        )
+
+        if result.success {
+            // Get updated commit hash
+            let submodules = try await listSubmodules()
+            let updated = submodules.first { $0.path == path }
+            return SubmoduleUpdateResult.success(path: path, commit: updated?.commitHash)
+        } else {
+            return SubmoduleUpdateResult.failure(path: path, error: result.error ?? "Failed to update submodule")
+        }
+    }
+
+    func removeSubmodule(path: String) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        // Step 1: Deinit the submodule
+        let deinitResult = await shellExecutor.executeGit(
+            arguments: ["submodule", "deinit", "-f", path],
+            workingDirectory: repo.path
+        )
+
+        guard deinitResult.success else {
+            throw GitError.commandFailed(deinitResult.error ?? "Failed to deinit submodule")
+        }
+
+        // Step 2: Remove the submodule from .git/modules
+        let rmModuleResult = await shellExecutor.executeGit(
+            arguments: ["rm", "-f", path],
+            workingDirectory: repo.path
+        )
+
+        guard rmModuleResult.success else {
+            throw GitError.commandFailed(rmModuleResult.error ?? "Failed to remove submodule")
+        }
+
+        // Step 3: Remove the submodule directory from .git/modules (if exists)
+        let modulesPath = repo.path.appendingPathComponent(".git/modules/\(path)")
+        if FileManager.default.fileExists(atPath: modulesPath.path) {
+            try? FileManager.default.removeItem(at: modulesPath)
+        }
+    }
+
+    func syncSubmodules() async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["submodule", "sync", "--recursive"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to sync submodules")
+        }
+    }
 }

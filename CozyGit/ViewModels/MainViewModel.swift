@@ -19,6 +19,7 @@ final class MainViewModel {
         case stash = "Stash"
         case tags = "Tags"
         case remotes = "Remotes"
+        case submodules = "Submodules"
         case cleanup = "Cleanup"
         case automate = "Automate"
 
@@ -33,6 +34,7 @@ final class MainViewModel {
             case .stash: return "tray.and.arrow.down"
             case .tags: return "tag"
             case .remotes: return "network"
+            case .submodules: return "shippingbox"
             case .cleanup: return "trash"
             case .automate: return "gearshape.2"
             }

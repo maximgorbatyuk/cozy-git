@@ -82,6 +82,8 @@ struct MainView: View {
             TagsTab(viewModel: repositoryViewModel)
         case .remotes:
             RemotesTab(viewModel: repositoryViewModel)
+        case .submodules:
+            SubmodulesTab(viewModel: repositoryViewModel)
         case .cleanup:
             CleanupTab(viewModel: repositoryViewModel)
         case .automate:
