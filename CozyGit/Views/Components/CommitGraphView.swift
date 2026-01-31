@@ -93,10 +93,10 @@ class GraphLayoutCalculator {
         guard !commits.isEmpty else { return [] }
 
         var nodes: [CommitGraphNode] = []
-        // Active lanes that draw continuous vertical lines
-        var activeLanes: [GraphLane] = []
-        // Lanes reserved for merge parents (only draw merge curve, not continuous line)
-        var reservedLanes: [String: Int] = [:]  // commitHash -> lane
+        // Maps commit hash to assigned lane
+        var commitToLane: [String: Int] = [:]
+        // Active lanes: lane index -> (expected commit hash, color)
+        var activeLanes: [Int: (commitHash: String, color: Color)] = [:]
         var laneColors: [Int: Color] = [:]
         var colorIndex = 0
 
@@ -104,36 +104,48 @@ class GraphLayoutCalculator {
         let commitSet = Set(commits.map { $0.hash })
 
         for (row, commit) in commits.enumerated() {
-            // Capture lanes that were active before processing this commit (for drawing lines from top)
-            let continuingLanes = getCurrentActiveLanes(activeLanes, laneColors: laneColors)
+            // Capture which lanes are active before processing this commit
+            let continuingLanes = activeLanes.mapValues { $0.color }
 
             // Find or create lane for this commit
             var lane: Int
             var nodeColor: Color
 
-            // Check if this commit has a reserved lane (from a previous merge)
-            if let reservedLane = reservedLanes[commit.hash] {
-                lane = reservedLane
+            // Check if this commit was already assigned a lane (from a previous merge)
+            if let assignedLane = commitToLane[commit.hash] {
+                lane = assignedLane
                 nodeColor = laneColors[lane] ?? BranchColors.color(for: colorIndex)
-                reservedLanes.removeValue(forKey: commit.hash)
-                // This lane is now active (the commit is here, and it may have parents)
+                // Remove from active since we're now processing it
+                activeLanes.removeValue(forKey: lane)
             }
-            // Check if this commit is expected in any active lane
-            else if let existingLane = findLaneForCommit(commit.hash, in: activeLanes) {
+            // Check if any active lane is expecting this commit
+            else if let (existingLane, _) = activeLanes.first(where: { $0.value.commitHash == commit.hash }) {
                 lane = existingLane
-                nodeColor = laneColors[lane] ?? BranchColors.color(for: colorIndex)
+                nodeColor = activeLanes[lane]?.color ?? laneColors[lane] ?? BranchColors.color(for: colorIndex)
+                activeLanes.removeValue(forKey: lane)
             } else {
-                // New branch - find first available lane or create new one
-                lane = findAvailableLane(in: activeLanes, reservedLanes: reservedLanes)
-                nodeColor = BranchColors.color(for: colorIndex)
-                colorIndex += 1
-                laneColors[lane] = nodeColor
+                // New commit not expected - try to use first parent's lane
+                var preferredLane: Int?
+                if let firstParent = commit.parents.first, commitSet.contains(firstParent) {
+                    // Use first parent's lane for visual continuity
+                    preferredLane = commitToLane[firstParent]
+                }
+
+                // Find best lane, preferring the parent's lane if available
+                if let preferred = preferredLane, !activeLanes.keys.contains(preferred) {
+                    // Parent's lane is available, use it
+                    lane = preferred
+                    nodeColor = laneColors[preferred] ?? BranchColors.color(for: colorIndex)
+                } else {
+                    // Parent's lane is occupied or no parent - find available lane
+                    lane = findBestLane(activeLanes: activeLanes, commitToLane: commitToLane, excluding: preferredLane)
+                    nodeColor = BranchColors.color(for: colorIndex)
+                    colorIndex += 1
+                }
             }
 
-            // Ensure lanes array is big enough
-            while activeLanes.count <= lane {
-                activeLanes.append(GraphLane(commitHash: "", color: .gray, isActive: false))
-            }
+            laneColors[lane] = nodeColor
+            commitToLane[commit.hash] = lane
 
             // Calculate parent lanes for drawing connections
             var parentLanes: [(String, Int, Int)] = []
@@ -143,49 +155,51 @@ class GraphLayoutCalculator {
                 guard commitSet.contains(parentHash) else { continue }
 
                 if parentIndex == 0 {
-                    // First parent continues on same lane - this draws a continuous line
+                    // First parent continues on same lane
                     parentLanes.append((parentHash, lane, lane))
-                    activeLanes[lane] = GraphLane(commitHash: parentHash, color: nodeColor, isActive: true)
-                    laneColors[lane] = nodeColor
+                    activeLanes[lane] = (commitHash: parentHash, color: nodeColor)
+                    commitToLane[parentHash] = lane
                 } else {
-                    // Secondary parent (merge) - reserve a lane for it but DON'T make it active
-                    // This means no continuous line, only the merge curve
+                    // Secondary parent (merge source)
                     let parentLane: Int
 
-                    if let existingReserved = reservedLanes[parentHash] {
-                        // Already reserved
-                        parentLane = existingReserved
-                    } else if let existingActive = findLaneForCommit(parentHash, in: activeLanes) {
-                        // Already on an active lane
-                        parentLane = existingActive
+                    if let existingLane = commitToLane[parentHash] {
+                        // Already assigned a lane
+                        parentLane = existingLane
                     } else {
-                        // Need to reserve a new lane
-                        parentLane = findAvailableLane(in: activeLanes, reservedLanes: reservedLanes, excluding: lane)
+                        // Need to assign a lane for this parent
+                        // Check if there are any OTHER active lanes (parallel branches)
+                        let otherActiveLanes = activeLanes.filter { $0.key != lane }
 
-                        while activeLanes.count <= parentLane {
-                            activeLanes.append(GraphLane(commitHash: "", color: .gray, isActive: false))
+                        if otherActiveLanes.isEmpty {
+                            // No parallel branches - can potentially reuse a lane
+                            // But we need a different lane than current for the merge curve
+                            parentLane = findBestLane(activeLanes: activeLanes, commitToLane: commitToLane, excluding: lane)
+                        } else {
+                            // There are parallel branches - find available lane
+                            parentLane = findBestLane(activeLanes: activeLanes, commitToLane: commitToLane, excluding: lane)
                         }
 
                         let parentColor = BranchColors.color(for: colorIndex)
                         colorIndex += 1
                         laneColors[parentLane] = parentColor
 
-                        // Reserve this lane for the parent commit (don't mark as active)
-                        reservedLanes[parentHash] = parentLane
+                        // Mark this lane as expecting the parent commit
+                        activeLanes[parentLane] = (commitHash: parentHash, color: parentColor)
+                        commitToLane[parentHash] = parentLane
                     }
                     parentLanes.append((parentHash, lane, parentLane))
                 }
             }
 
-            // If no parents in our list, close the lane
+            // If no parents in our list, this lane ends
             let hasParentsInList = commit.parents.contains { commitSet.contains($0) }
             if !hasParentsInList {
-                activeLanes[lane] = GraphLane(commitHash: "", color: nodeColor, isActive: false)
+                activeLanes.removeValue(forKey: lane)
             }
 
-            // Get active lanes AFTER processing this commit (for drawing lines to bottom)
-            // Don't include reserved lanes - they only get merge curves
-            let currentActiveLanes = getCurrentActiveLanes(activeLanes, laneColors: laneColors)
+            // Get active lanes AFTER processing this commit
+            let currentActiveLanes = activeLanes.mapValues { $0.color }
 
             let node = CommitGraphNode(
                 commit: commit,
@@ -202,38 +216,24 @@ class GraphLayoutCalculator {
         return nodes
     }
 
-    private static func getCurrentActiveLanes(_ lanes: [GraphLane], laneColors: [Int: Color]) -> [Int: Color] {
-        var result: [Int: Color] = [:]
-        for (index, lane) in lanes.enumerated() {
-            if lane.isActive {
-                result[index] = laneColors[index] ?? lane.color
-            }
-        }
-        return result
-    }
+    /// Find the best lane for a new commit
+    /// Prefers lane 0 when possible, otherwise finds first available lane
+    private static func findBestLane(activeLanes: [Int: (commitHash: String, color: Color)],
+                                      commitToLane: [String: Int],
+                                      excluding: Int? = nil) -> Int {
+        let usedLanes = Set(activeLanes.keys)
 
-    private static func findLaneForCommit(_ hash: String, in lanes: [GraphLane]) -> Int? {
-        for (index, lane) in lanes.enumerated() {
-            if lane.isActive && lane.commitHash == hash {
-                return index
-            }
+        // Try lane 0 first if not excluded and not in use
+        if excluding != 0 && !usedLanes.contains(0) {
+            return 0
         }
-        return nil
-    }
 
-    private static func findAvailableLane(in lanes: [GraphLane], reservedLanes: [String: Int] = [:], excluding: Int? = nil) -> Int {
-        let reservedIndices = Set(reservedLanes.values)
-        for (index, lane) in lanes.enumerated() {
-            if !lane.isActive && index != excluding && !reservedIndices.contains(index) {
-                return index
-            }
+        // Find first available lane
+        var lane = 0
+        while usedLanes.contains(lane) || lane == excluding {
+            lane += 1
         }
-        // Find first index not reserved and not excluding
-        var newIndex = lanes.count
-        while reservedIndices.contains(newIndex) || newIndex == excluding {
-            newIndex += 1
-        }
-        return newIndex
+        return lane
     }
 }
 
@@ -359,6 +359,8 @@ struct CommitGraphRow: View {
     let node: CommitGraphNode
     let isSelected: Bool
     let maxLanes: Int
+    var currentBranch: String?
+    var onBranchClick: ((String, String?) -> Void)?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -465,10 +467,17 @@ struct CommitGraphRow: View {
 
     private var commitInfo: some View {
         VStack(alignment: .leading, spacing: 2) {
-            // Message
-            Text(node.commit.message.components(separatedBy: .newlines).first ?? node.commit.message)
-                .lineLimit(1)
-                .font(.system(.body))
+            // Message with branch/tag badges
+            HStack(spacing: 6) {
+                // Branch and tag badges
+                ForEach(node.commit.refs, id: \.self) { ref in
+                    refBadge(for: ref)
+                }
+
+                Text(node.commit.message.components(separatedBy: .newlines).first ?? node.commit.message)
+                    .lineLimit(1)
+                    .font(.system(.body))
+            }
 
             // Metadata
             HStack(spacing: 8) {
@@ -490,6 +499,65 @@ struct CommitGraphRow: View {
         }
         .padding(.horizontal, 8)
     }
+
+    private func refBadge(for ref: String) -> some View {
+        let (displayName, icon, color, branchName, isRemoteBranch) = parseRef(ref)
+        let isClickable = branchName != nil
+        let isCurrentBranch = branchName != nil && branchName == currentBranch
+
+        return HStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+            Text(displayName)
+                .font(.caption2)
+                .fontWeight(isCurrentBranch ? .bold : .medium)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(isCurrentBranch ? 0.25 : 0.15))
+        .foregroundColor(color)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(color, lineWidth: isCurrentBranch ? 2 : 0)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if isClickable && hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .onTapGesture(count: 2) {
+            if let branch = branchName {
+                onBranchClick?(branch, isRemoteBranch ? ref : nil)
+            }
+        }
+        .help(isCurrentBranch ? "Current branch" : (isClickable ? "Double-click to checkout '\(branchName ?? "")'" : ""))
+    }
+
+    /// Parse ref and return (displayName, icon, color, branchName for checkout, fullRemoteRef)
+    /// branchName is nil for tags and HEAD-only refs
+    /// fullRemoteRef is set for remote branches (e.g., "origin/feature-x")
+    private func parseRef(_ ref: String) -> (name: String, icon: String, color: Color, branchName: String?, isRemote: Bool) {
+        if ref.hasPrefix("HEAD -> ") {
+            let branchName = String(ref.dropFirst(8))
+            return (branchName, "arrowtriangle.right.fill", .purple, branchName, false)
+        } else if ref.hasPrefix("tag: ") {
+            let tagName = String(ref.dropFirst(5))
+            return (tagName, "tag.fill", .orange, nil, false)
+        } else if ref.hasPrefix("origin/") {
+            // Remote branch - can checkout to create local tracking branch
+            let branchName = String(ref.dropFirst(7)) // Remove "origin/"
+            return (ref, "cloud.fill", .blue, branchName, true)
+        } else if ref == "HEAD" {
+            return (ref, "arrowtriangle.right.fill", .purple, nil, false)
+        } else {
+            // Local branch
+            return (ref, "arrow.triangle.branch", .green, ref, false)
+        }
+    }
 }
 
 // MARK: - Commit Graph List View
@@ -499,6 +567,8 @@ struct CommitGraphListView: View {
     let commits: [Commit]
     @Binding var selectedCommit: Commit?
     let onDoubleClick: (Commit) -> Void
+    var currentBranch: String?
+    var onBranchClick: ((String, String?) -> Void)?
 
     @State private var nodes: [CommitGraphNode] = []
     @State private var maxLanes: Int = 1
@@ -510,7 +580,9 @@ struct CommitGraphListView: View {
                     CommitGraphRow(
                         node: node,
                         isSelected: selectedCommit?.hash == node.commit.hash,
-                        maxLanes: maxLanes
+                        maxLanes: maxLanes,
+                        currentBranch: currentBranch,
+                        onBranchClick: onBranchClick
                     )
                     .onTapGesture {
                         selectedCommit = node.commit

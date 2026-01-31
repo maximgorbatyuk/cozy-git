@@ -176,7 +176,11 @@ final class GitService: GitServiceProtocol {
             throw GitError.commandFailed(result.error ?? "Failed to checkout branch")
         }
 
-        currentRepository?.currentBranch = name
+        // Get the actual current branch name after checkout
+        // This handles the case where checking out a remote branch creates a local tracking branch
+        if let currentBranch = try? await getCurrentBranch() {
+            currentRepository?.currentBranch = currentBranch
+        }
     }
 
     func deleteBranch(name: String, force: Bool = false) async throws {
@@ -341,6 +345,7 @@ final class GitService: GitServiceProtocol {
 
         var args = [
             "log",
+            "--all",
             "--format=%H|%h|%s|%an|%ae|%aI|%cn|%ce|%cI|%P|%D",
             "-n", "\(limit)"
         ]

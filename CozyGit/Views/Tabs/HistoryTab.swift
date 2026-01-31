@@ -15,6 +15,8 @@ struct HistoryTab: View {
     @State private var commitDiff: Diff?
     @State private var isLoadingDiff: Bool = false
     @State private var selectedFileIndex: Int = 0
+    @State private var checkoutError: String?
+    @State private var showCheckoutError: Bool = false
 
     var body: some View {
         if viewModel.repository != nil {
@@ -26,6 +28,11 @@ struct HistoryTab: View {
                     if let commit = selectedCommit {
                         CommitDetailSheet(commit: commit)
                     }
+                }
+                .alert("Checkout Failed", isPresented: $showCheckoutError) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text(checkoutError ?? "Unknown error occurred")
                 }
         } else {
             noRepositoryView
@@ -95,6 +102,12 @@ struct HistoryTab: View {
                         selectedCommit: $selectedCommit,
                         onDoubleClick: { commit in
                             showCommitDetail = true
+                        },
+                        currentBranch: viewModel.repository?.currentBranch,
+                        onBranchClick: { branchName, remoteRef in
+                            Task {
+                                await checkoutBranch(branchName, remoteRef: remoteRef)
+                            }
                         }
                     )
                 } else {
@@ -272,6 +285,28 @@ struct HistoryTab: View {
         let gitService = DependencyContainer.shared.gitService
         commitDiff = try? await gitService.getDiffForCommit(hash: commit.hash)
         isLoadingDiff = false
+    }
+
+    // MARK: - Branch Checkout
+
+    private func checkoutBranch(_ branchName: String, remoteRef: String? = nil) async {
+        let gitService = DependencyContainer.shared.gitService
+
+        do {
+            if let remoteRef = remoteRef {
+                // Remote branch: checkout with tracking
+                try await gitService.checkoutBranch(name: remoteRef)
+            } else {
+                // Local branch: simple checkout
+                try await gitService.checkoutBranch(name: branchName)
+            }
+            // Refresh branches and commits after checkout
+            await viewModel.loadBranches()
+            await viewModel.loadCommits(limit: 100)
+        } catch {
+            checkoutError = error.localizedDescription
+            showCheckoutError = true
+        }
     }
 
     // MARK: - Commit Preview
