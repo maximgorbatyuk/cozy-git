@@ -328,6 +328,12 @@ private struct CommitDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     let commit: Commit
 
+    @State private var commitDiff: Diff?
+    @State private var isLoadingDiff = false
+    @State private var selectedTab = 0
+    @State private var diffViewMode: DiffViewMode = .sideBySide
+    @State private var selectedFileIndex: Int = 0
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -348,91 +354,22 @@ private struct CommitDetailSheet: View {
 
             Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Full Hash
-                    GroupBox("Commit Hash") {
-                        HStack {
-                            Text(commit.hash)
-                                .font(.system(.body, design: .monospaced))
-                                .textSelection(.enabled)
-                            Spacer()
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(commit.hash, forType: .string)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+            // Tab Picker
+            Picker("View", selection: $selectedTab) {
+                Text("Info").tag(0)
+                Text("Changes").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
 
-                    // Full Message
-                    GroupBox("Message") {
-                        Text(commit.message)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+            Divider()
 
-                    // Author
-                    GroupBox("Author") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            LabeledContent("Name", value: commit.author)
-                            LabeledContent("Email", value: commit.authorEmail)
-                            LabeledContent("Date", value: commit.date.formatted(date: .complete, time: .complete))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    // Committer
-                    if commit.committer != commit.author || commit.committerDate != commit.date {
-                        GroupBox("Committer") {
-                            VStack(alignment: .leading, spacing: 4) {
-                                LabeledContent("Name", value: commit.committer)
-                                LabeledContent("Email", value: commit.committerEmail)
-                                LabeledContent("Date", value: commit.committerDate.formatted(date: .complete, time: .complete))
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    // Parents
-                    if !commit.parents.isEmpty {
-                        GroupBox("Parent Commits") {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(commit.parents, id: \.self) { parent in
-                                    Text(parent)
-                                        .font(.system(.caption, design: .monospaced))
-                                        .textSelection(.enabled)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    // References
-                    if !commit.refs.isEmpty {
-                        GroupBox("References") {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(commit.refs, id: \.self) { ref in
-                                    Text(ref)
-                                        .font(.caption)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    // Placeholder for affected files (would need git show --name-status)
-                    GroupBox("Changed Files") {
-                        Text("File list will be available in Phase 8 (Diff Viewer)")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding()
+            // Content
+            if selectedTab == 0 {
+                commitInfoView
+            } else {
+                commitChangesView
             }
 
             Divider()
@@ -447,7 +384,262 @@ private struct CommitDetailSheet: View {
             }
             .padding()
         }
-        .frame(width: 600, height: 500)
+        .frame(width: 900, height: 600)
+        .task {
+            await loadCommitDiff()
+        }
+    }
+
+    // MARK: - Info View
+
+    private var commitInfoView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Full Hash
+                GroupBox("Commit Hash") {
+                    HStack {
+                        Text(commit.hash)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                        Spacer()
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(commit.hash, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // Full Message
+                GroupBox("Message") {
+                    Text(commit.message)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // Author
+                GroupBox("Author") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        LabeledContent("Name", value: commit.author)
+                        LabeledContent("Email", value: commit.authorEmail)
+                        LabeledContent("Date", value: commit.date.formatted(date: .complete, time: .complete))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // Committer
+                if commit.committer != commit.author || commit.committerDate != commit.date {
+                    GroupBox("Committer") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            LabeledContent("Name", value: commit.committer)
+                            LabeledContent("Email", value: commit.committerEmail)
+                            LabeledContent("Date", value: commit.committerDate.formatted(date: .complete, time: .complete))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                // Parents
+                if !commit.parents.isEmpty {
+                    GroupBox("Parent Commits") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(commit.parents, id: \.self) { parent in
+                                Text(parent)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                // References
+                if !commit.refs.isEmpty {
+                    GroupBox("References") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(commit.refs, id: \.self) { ref in
+                                Text(ref)
+                                    .font(.caption)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                // File Summary
+                if let diff = commitDiff, !diff.isEmpty {
+                    GroupBox("Changed Files (\(diff.files.count))") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 16) {
+                                Label("\(diff.totalAdditions) additions", systemImage: "plus")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                                Label("\(diff.totalDeletions) deletions", systemImage: "minus")
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                            }
+
+                            Divider()
+
+                            ForEach(diff.files.prefix(10)) { file in
+                                HStack {
+                                    fileStatusIcon(for: file)
+                                    Text(file.displayName)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Spacer()
+                                    if file.additions > 0 {
+                                        Text("+\(file.additions)")
+                                            .font(.caption2)
+                                            .foregroundColor(.green)
+                                    }
+                                    if file.deletions > 0 {
+                                        Text("-\(file.deletions)")
+                                            .font(.caption2)
+                                            .foregroundColor(.red)
+                                    }
+                                }
+                            }
+
+                            if diff.files.count > 10 {
+                                Text("... and \(diff.files.count - 10) more files")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+
+    // MARK: - Changes View
+
+    private var commitChangesView: some View {
+        Group {
+            if isLoadingDiff {
+                ProgressView("Loading changes...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let diff = commitDiff, !diff.isEmpty {
+                HSplitView {
+                    // File list
+                    fileListView(diff: diff)
+                        .frame(minWidth: 200, maxWidth: 300)
+
+                    // Diff view
+                    VStack(spacing: 0) {
+                        // View mode toggle
+                        HStack {
+                            Spacer()
+                            Picker("View Mode", selection: $diffViewMode) {
+                                ForEach(DiffViewMode.allCases, id: \.self) { mode in
+                                    Label(mode.rawValue, systemImage: mode.icon)
+                                        .tag(mode)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 200)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                        }
+                        .background(Color(nsColor: .controlBackgroundColor))
+
+                        Divider()
+
+                        if selectedFileIndex < diff.files.count {
+                            switch diffViewMode {
+                            case .unified:
+                                UnifiedDiffView(fileDiff: diff.files[selectedFileIndex])
+                            case .sideBySide:
+                                SideBySideDiffView(fileDiff: diff.files[selectedFileIndex])
+                            }
+                        } else {
+                            Text("Select a file to view changes")
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                }
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 32))
+                        .foregroundColor(.secondary)
+                    Text("No changes in this commit")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private func fileListView(diff: Diff) -> some View {
+        List(selection: $selectedFileIndex) {
+            ForEach(Array(diff.files.enumerated()), id: \.offset) { index, file in
+                HStack {
+                    fileStatusIcon(for: file)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(file.displayName)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        HStack(spacing: 8) {
+                            if file.additions > 0 {
+                                Text("+\(file.additions)")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                            }
+                            if file.deletions > 0 {
+                                Text("-\(file.deletions)")
+                                    .font(.caption2)
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+
+                    Spacer()
+                }
+                .tag(index)
+                .padding(.vertical, 2)
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    private func fileStatusIcon(for file: FileDiff) -> some View {
+        Group {
+            if file.isNewFile {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundColor(.green)
+            } else if file.isDeletedFile {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundColor(.red)
+            } else if file.isRenamed {
+                Image(systemName: "arrow.right.circle.fill")
+                    .foregroundColor(.blue)
+            } else if file.isBinary {
+                Image(systemName: "doc.zipper")
+                    .foregroundColor(.secondary)
+            } else {
+                Image(systemName: "pencil.circle.fill")
+                    .foregroundColor(.orange)
+            }
+        }
+        .font(.caption)
+    }
+
+    private func loadCommitDiff() async {
+        isLoadingDiff = true
+        let gitService = DependencyContainer.shared.gitService
+        commitDiff = try? await gitService.getDiffForCommit(hash: commit.hash)
+        isLoadingDiff = false
     }
 }
 

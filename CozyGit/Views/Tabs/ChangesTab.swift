@@ -71,13 +71,26 @@ struct ChangesTab: View {
 
     // MARK: - Diff View
 
+    @State private var diffViewMode: DiffViewMode = .sideBySide
+
     private var diffView: some View {
-        VStack {
+        VStack(spacing: 0) {
+            // View mode toggle
+            if currentDiff != nil || isLoadingDiff {
+                diffViewModeToggle
+                Divider()
+            }
+
             if isLoadingDiff {
                 ProgressView("Loading diff...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let diff = currentDiff {
-                UnifiedDiffView(fileDiff: diff)
+                switch diffViewMode {
+                case .unified:
+                    UnifiedDiffView(fileDiff: diff)
+                case .sideBySide:
+                    SideBySideDiffView(fileDiff: diff)
+                }
             } else if selectedFile != nil {
                 VStack(spacing: 8) {
                     Image(systemName: "doc.text.magnifyingglass")
@@ -114,6 +127,24 @@ struct ChangesTab: View {
         isLoadingDiff = true
         currentDiff = await viewModel.getDiffForFile(path: file.path, staged: file.isStaged)
         isLoadingDiff = false
+    }
+
+    private var diffViewModeToggle: some View {
+        HStack {
+            Spacer()
+
+            Picker("View Mode", selection: $diffViewMode) {
+                ForEach(DiffViewMode.allCases, id: \.self) { mode in
+                    Label(mode.rawValue, systemImage: mode.icon)
+                        .tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     // MARK: - Staged Files Section
