@@ -17,6 +17,7 @@ final class RepositoryViewModel {
     var fileStatuses: [FileStatus] = []
     var stashes: [Stash] = []
     var tags: [Tag] = []
+    var remotes: [Remote] = []
 
     var isLoading: Bool = false
     var errorMessage: String?
@@ -63,9 +64,10 @@ final class RepositoryViewModel {
         async let statusTask = loadFileStatuses()
         async let stashTask = loadStashes()
         async let tagsTask = loadTags()
+        async let remotesTask = loadRemotes()
         async let remoteStatusTask = loadRemoteStatus()
 
-        _ = await (branchesTask, commitsTask, statusTask, stashTask, tagsTask, remoteStatusTask)
+        _ = await (branchesTask, commitsTask, statusTask, stashTask, tagsTask, remotesTask, remoteStatusTask)
 
         isLoading = false
     }
@@ -116,6 +118,38 @@ final class RepositoryViewModel {
             tags = try await gitService.listTags()
         } catch {
             handleError(error)
+        }
+    }
+
+    func loadRemotes() async {
+        do {
+            remotes = try await gitService.listRemotes()
+        } catch {
+            handleError(error)
+        }
+    }
+
+    // MARK: - Remote Management
+
+    func addRemote(name: String, url: URL) async throws {
+        try await gitService.addRemote(name: name, url: url)
+        await loadRemotes()
+    }
+
+    func removeRemote(name: String) async throws {
+        try await gitService.removeRemote(name: name)
+        await loadRemotes()
+    }
+
+    func fetchFromRemote(_ remote: Remote, prune: Bool = false) async -> FetchResult {
+        do {
+            let result = try await gitService.fetchWithResult(remote: remote.name, prune: prune)
+            await loadBranches()
+            await loadRemoteStatus()
+            return result
+        } catch {
+            handleError(error)
+            return FetchResult(success: false, errorMessage: error.localizedDescription)
         }
     }
 

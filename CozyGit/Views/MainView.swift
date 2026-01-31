@@ -80,6 +80,8 @@ struct MainView: View {
             StashTab(viewModel: repositoryViewModel)
         case .tags:
             TagsTab(viewModel: repositoryViewModel)
+        case .remotes:
+            RemotesTab(viewModel: repositoryViewModel)
         case .cleanup:
             CleanupTab(viewModel: repositoryViewModel)
         case .automate:

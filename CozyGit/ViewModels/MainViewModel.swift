@@ -18,6 +18,7 @@ final class MainViewModel {
         case history = "History"
         case stash = "Stash"
         case tags = "Tags"
+        case remotes = "Remotes"
         case cleanup = "Cleanup"
         case automate = "Automate"
 
@@ -31,6 +32,7 @@ final class MainViewModel {
             case .history: return "clock"
             case .stash: return "tray.and.arrow.down"
             case .tags: return "tag"
+            case .remotes: return "network"
             case .cleanup: return "trash"
             case .automate: return "gearshape.2"
             }

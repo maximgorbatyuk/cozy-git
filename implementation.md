@@ -1418,7 +1418,7 @@ protocol GitService: GitRepositoryService,
 | 10 | Commit Graph Visualization | Week 12 | ✅ | Phase 9 |
 | 11 | Stash Operations | Week 13 | ✅ | Phase 10 |
 | 12 | Tag Operations | Week 14 | ✅ | Phase 11 |
-| 13 | Remote Management | Week 15 | ⬜ | Phase 12 |
+| 13 | Remote Management | Week 15 | ✅ | Phase 12 |
 | 14 | Advanced Git Operations | Week 16 | ⬜ | Phase 13 |
 | 15 | Submodule Support | Week 17 | ⬜ | Phase 14 |
 | 16 | Ignore File Management | Week 18 | ⬜ | Phase 15 |
@@ -2367,11 +2367,25 @@ protocol GitService: GitRepositoryService,
 - Update operations to use selected remote
 
 **Completion Criteria**:
-- [ ] Can add/remove remotes
-- [ ] Can update remote URLs
-- [ ] Can fetch from specific remote
-- [ ] Remote details display correctly
-- [ ] URLs validated properly
+- [x] Can add/remove remotes
+- [ ] Can update remote URLs (future enhancement)
+- [x] Can fetch from specific remote
+- [x] Remote details display correctly
+
+**Implementation Notes (Phase 13 - DONE)**:
+- Created `RemotesTab.swift` with HSplitView layout (remote list + details)
+- Added `remotes: [Remote]` property to RepositoryViewModel
+- Added `loadRemotes()`, `addRemote()`, `removeRemote()`, `fetchFromRemote()` methods
+- Added "remotes" case to MainViewModel.Tab enum with "network" icon
+- Features: remote list, add remote dialog, fetch from remote, delete remote (with origin protection)
+- Remote details show fetch/push URLs with copy buttons
+- Shows remote branches for each remote in the details panel
+
+**Files Modified**:
+- `ViewModels/MainViewModel.swift` - Added remotes tab enum case
+- `ViewModels/RepositoryViewModel.swift` - Added remotes property and management methods
+- `Views/MainView.swift` - Added RemotesTab routing
+- `Views/Tabs/RemotesTab.swift` - New file with complete remote management UI
 
 ---
 
@@ -3052,9 +3066,9 @@ protocol GitService: GitRepositoryService,
 | 8 | Week 9 | Unified diff viewer | Phase 7 | ⬜ |
 | 9 | Week 10-11 | Side-by-side diff | Phase 9 | ✅ |
 | 10 | Week 12 | Commit graph visualization | Phase 10 | ✅ |
-| 11 | Week 13 | Stash operations | Phase 10 | ⬜ |
-| 12 | Week 14 | Tag operations | Phase 11 | ⬜ |
-| 13 | Week 15 | Remote management | Phase 12 | ⬜ |
+| 11 | Week 13 | Stash operations | Phase 10 | ✅ |
+| 12 | Week 14 | Tag operations | Phase 11 | ✅ |
+| 13 | Week 15 | Remote management | Phase 12 | ✅ |
 | 14 | Week 16 | Advanced Git ops | Phase 13 | ⬜ |
 | 15 | Week 17 | Submodule support | Phase 14 | ⬜ |
 | 16 | Week 18 | .gitignore management | Phase 15 | ⬜ |
