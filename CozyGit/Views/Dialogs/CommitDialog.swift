@@ -13,10 +13,14 @@ struct CommitDialog: View {
     @State private var commitMessage: String = ""
     @State private var isCommitting = false
     @State private var errorMessage: String?
+    @State private var config: AutomationConfig = AutomationConfig()
+    @State private var selectedPrefixId: UUID?
 
     // Commit message guidelines
     private let subjectMaxLength = 72
     private let bodyStartLine = 2
+
+    private let automationService = AutomationService(shellExecutor: DependencyContainer.shared.shellExecutor)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +49,11 @@ struct CommitDialog: View {
 
                 Divider()
 
+                // Prefix Selector (if enabled)
+                if config.showPrefixInCommitDialog && !config.enabledPrefixes.isEmpty {
+                    prefixSelector
+                }
+
                 // Commit Message Editor
                 commitMessageEditor
 
@@ -56,6 +65,12 @@ struct CommitDialog: View {
                 }
             }
             .padding()
+            .onAppear {
+                if let repo = viewModel.repository {
+                    config = automationService.loadConfig(for: repo)
+                    selectedPrefixId = config.selectedPrefixId
+                }
+            }
 
             Divider()
 
@@ -86,7 +101,7 @@ struct CommitDialog: View {
             }
             .padding()
         }
-        .frame(width: 500, height: 450)
+        .frame(width: 500, height: 520)
     }
 
     // MARK: - Staged Files Summary
@@ -132,6 +147,72 @@ struct CommitDialog: View {
                 }
                 .frame(maxHeight: 100)
             }
+        }
+    }
+
+    // MARK: - Prefix Selector
+
+    private var prefixSelector: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Commit Prefix")
+                .font(.headline)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    // None option
+                    Button {
+                        selectedPrefixId = nil
+                    } label: {
+                        Text("None")
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(selectedPrefixId == nil ? Color.accentColor : Color.secondary.opacity(0.2))
+                            .foregroundStyle(selectedPrefixId == nil ? .white : .primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(config.enabledPrefixes) { prefix in
+                        Button {
+                            selectedPrefixId = prefix.id
+                        } label: {
+                            Text(prefix.prefix)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(selectedPrefixId == prefix.id ? prefixColor(for: prefix) : prefixColor(for: prefix).opacity(0.2))
+                                .foregroundStyle(selectedPrefixId == prefix.id ? .white : prefixColor(for: prefix))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                        .help(prefix.name)
+                    }
+                }
+            }
+
+            if let selectedId = selectedPrefixId,
+               let prefix = config.prefixes.first(where: { $0.id == selectedId }) {
+                Text("Preview: \(prefix.prefix) \(commitMessage.isEmpty ? "your message" : commitMessage.components(separatedBy: .newlines).first ?? "")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func prefixColor(for prefix: CommitPrefix) -> Color {
+        switch prefix.color {
+        case .red: return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green: return .green
+        case .blue: return .blue
+        case .purple: return .purple
+        case .cyan: return .cyan
+        case .indigo: return .indigo
+        case .brown: return .brown
+        case .gray: return .gray
         }
     }
 
@@ -190,7 +271,14 @@ struct CommitDialog: View {
         isCommitting = true
         errorMessage = nil
 
-        await viewModel.commit(message: commitMessage)
+        // Apply prefix if selected
+        var finalMessage = commitMessage
+        if let selectedId = selectedPrefixId,
+           let prefix = config.prefixes.first(where: { $0.id == selectedId }) {
+            finalMessage = prefix.apply(to: commitMessage)
+        }
+
+        await viewModel.commit(message: finalMessage)
 
         if viewModel.errorMessage != nil {
             errorMessage = viewModel.errorMessage
