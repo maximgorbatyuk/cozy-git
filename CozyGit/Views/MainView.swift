@@ -84,6 +84,8 @@ struct MainView: View {
             RemotesTab(viewModel: repositoryViewModel)
         case .submodules:
             SubmodulesTab(viewModel: repositoryViewModel)
+        case .gitignore:
+            GitignoreTab(viewModel: repositoryViewModel)
         case .cleanup:
             CleanupTab(viewModel: repositoryViewModel)
         case .automate:

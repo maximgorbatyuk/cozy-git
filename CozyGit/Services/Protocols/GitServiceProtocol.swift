@@ -149,6 +149,34 @@ protocol GitSubmoduleServiceProtocol {
     func syncSubmodules() async throws
 }
 
+// MARK: - Ignore Operations
+
+protocol GitIgnoreServiceProtocol {
+    /// Get all ignore files (local, global, nested, exclude)
+    func getIgnoreFiles() async throws -> [IgnoreFile]
+
+    /// Get the local .gitignore file content
+    func getLocalIgnoreFile() async throws -> IgnoreFile
+
+    /// Add a pattern to the local .gitignore
+    func addIgnorePattern(_ pattern: String) async throws
+
+    /// Add multiple patterns to the local .gitignore
+    func addIgnorePatterns(_ patterns: [String]) async throws
+
+    /// Remove a pattern from the local .gitignore
+    func removeIgnorePattern(_ pattern: String) async throws
+
+    /// Replace all content in the local .gitignore
+    func setIgnoreContent(_ content: String) async throws
+
+    /// Check if a path is ignored
+    func isPathIgnored(_ path: String) async throws -> Bool
+
+    /// Get list of ignored files in the working directory
+    func getIgnoredFiles() async throws -> [String]
+}
+
 // MARK: - Combined Protocol
 
 protocol GitServiceProtocol: GitRepositoryServiceProtocol,
@@ -160,6 +188,7 @@ protocol GitServiceProtocol: GitRepositoryServiceProtocol,
                               GitMergeRebaseServiceProtocol,
                               GitDiffServiceProtocol,
                               GitAdvancedOperationsProtocol,
-                              GitSubmoduleServiceProtocol {
+                              GitSubmoduleServiceProtocol,
+                              GitIgnoreServiceProtocol {
     var currentRepository: Repository? { get }
 }

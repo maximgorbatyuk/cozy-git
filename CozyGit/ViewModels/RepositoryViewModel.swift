@@ -19,6 +19,9 @@ final class RepositoryViewModel {
     var tags: [Tag] = []
     var remotes: [Remote] = []
     var submodules: [Submodule] = []
+    var ignoreFile: IgnoreFile?
+    var ignoredFiles: [String] = []
+    var showIgnoredFiles: Bool = false
 
     var isLoading: Bool = false
     var errorMessage: String?
@@ -68,8 +71,9 @@ final class RepositoryViewModel {
         async let remotesTask = loadRemotes()
         async let submodulesTask = loadSubmodules()
         async let remoteStatusTask = loadRemoteStatus()
+        async let ignoreTask = loadIgnoreFile()
 
-        _ = await (branchesTask, commitsTask, statusTask, stashTask, tagsTask, remotesTask, submodulesTask, remoteStatusTask)
+        _ = await (branchesTask, commitsTask, statusTask, stashTask, tagsTask, remotesTask, submodulesTask, remoteStatusTask, ignoreTask)
 
         isLoading = false
     }
@@ -198,6 +202,77 @@ final class RepositoryViewModel {
     func syncSubmodules() async throws {
         try await gitService.syncSubmodules()
         await loadSubmodules()
+    }
+
+    // MARK: - Ignore Operations
+
+    func loadIgnoreFile() async {
+        do {
+            ignoreFile = try await gitService.getLocalIgnoreFile()
+            if showIgnoredFiles {
+                ignoredFiles = try await gitService.getIgnoredFiles()
+            }
+        } catch {
+            // Not critical, ignore file might not exist
+            ignoreFile = nil
+        }
+    }
+
+    func loadIgnoredFiles() async {
+        do {
+            ignoredFiles = try await gitService.getIgnoredFiles()
+        } catch {
+            ignoredFiles = []
+        }
+    }
+
+    func addIgnorePattern(_ pattern: String) async throws {
+        try await gitService.addIgnorePattern(pattern)
+        await loadIgnoreFile()
+        await loadFileStatuses() // Refresh file status as some files may now be ignored
+    }
+
+    func addIgnorePatterns(_ patterns: [String]) async throws {
+        try await gitService.addIgnorePatterns(patterns)
+        await loadIgnoreFile()
+        await loadFileStatuses()
+    }
+
+    func removeIgnorePattern(_ pattern: String) async throws {
+        try await gitService.removeIgnorePattern(pattern)
+        await loadIgnoreFile()
+        await loadFileStatuses()
+    }
+
+    func setIgnoreContent(_ content: String) async throws {
+        try await gitService.setIgnoreContent(content)
+        await loadIgnoreFile()
+        await loadFileStatuses()
+    }
+
+    func isPathIgnored(_ path: String) async -> Bool {
+        do {
+            return try await gitService.isPathIgnored(path)
+        } catch {
+            return false
+        }
+    }
+
+    func ignoreFile(at path: String) async throws {
+        try await addIgnorePattern(path)
+    }
+
+    func ignoreFileExtension(_ path: String) async throws {
+        let url = URL(fileURLWithPath: path)
+        let ext = url.pathExtension
+        if !ext.isEmpty {
+            try await addIgnorePattern("*.\(ext)")
+        }
+    }
+
+    func ignoreDirectory(_ path: String) async throws {
+        let trimmedPath = path.hasSuffix("/") ? path : path + "/"
+        try await addIgnorePattern(trimmedPath)
     }
 
     // MARK: - Branch Operations

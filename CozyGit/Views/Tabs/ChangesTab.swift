@@ -232,6 +232,20 @@ struct ChangesTab: View {
                             .onTapGesture {
                                 selectedFile = file
                             }
+                            .contextMenu {
+                                Button("Unstage") {
+                                    Task {
+                                        await viewModel.unstageFile(file)
+                                    }
+                                }
+
+                                Divider()
+
+                                Button("Copy Path") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(file.path, forType: .string)
+                                }
+                            }
 
                             if file.id != viewModel.filteredStagedFiles.last?.id {
                                 Divider()
@@ -312,6 +326,54 @@ struct ChangesTab: View {
                             .background(selectedFile?.id == file.id ? Color.accentColor.opacity(0.2) : Color.clear)
                             .onTapGesture {
                                 selectedFile = file
+                            }
+                            .contextMenu {
+                                Button("Stage") {
+                                    Task {
+                                        await viewModel.stageFile(file)
+                                    }
+                                }
+
+                                Button("Discard Changes") {
+                                    Task {
+                                        await viewModel.discardChanges(file)
+                                    }
+                                }
+
+                                Divider()
+
+                                Menu("Add to .gitignore") {
+                                    Button("Ignore This File") {
+                                        Task {
+                                            try? await viewModel.ignoreFile(at: file.path)
+                                        }
+                                    }
+
+                                    let ext = URL(fileURLWithPath: file.path).pathExtension
+                                    if !ext.isEmpty {
+                                        Button("Ignore *.\(ext) Files") {
+                                            Task {
+                                                try? await viewModel.ignoreFileExtension(file.path)
+                                            }
+                                        }
+                                    }
+
+                                    if file.path.contains("/") {
+                                        let dir = (file.path as NSString).deletingLastPathComponent
+                                        Button("Ignore Directory \(dir)/") {
+                                            Task {
+                                                try? await viewModel.ignoreDirectory(dir)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Divider()
+
+                                Button("Copy Path") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(file.path, forType: .string)
+                                }
                             }
 
                             if file.id != viewModel.filteredUnstagedFiles.last?.id {

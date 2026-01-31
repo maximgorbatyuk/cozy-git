@@ -2518,4 +2518,207 @@ final class GitService: GitServiceProtocol {
             throw GitError.commandFailed(result.error ?? "Failed to sync submodules")
         }
     }
+
+    // MARK: - Ignore Operations
+
+    func getIgnoreFiles() async throws -> [IgnoreFile] {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        var ignoreFiles: [IgnoreFile] = []
+
+        // Local .gitignore
+        let localIgnorePath = repo.path.appendingPathComponent(".gitignore")
+        let localIgnore = await parseIgnoreFile(at: localIgnorePath, source: .local)
+        ignoreFiles.append(localIgnore)
+
+        // Global gitignore
+        if let globalPath = await getGlobalIgnorePath() {
+            let globalIgnore = await parseIgnoreFile(at: globalPath, source: .global)
+            ignoreFiles.append(globalIgnore)
+        }
+
+        // .git/info/exclude
+        let excludePath = repo.path.appendingPathComponent(".git/info/exclude")
+        let excludeIgnore = await parseIgnoreFile(at: excludePath, source: .excludeFile)
+        ignoreFiles.append(excludeIgnore)
+
+        return ignoreFiles
+    }
+
+    func getLocalIgnoreFile() async throws -> IgnoreFile {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let localIgnorePath = repo.path.appendingPathComponent(".gitignore")
+        return await parseIgnoreFile(at: localIgnorePath, source: .local)
+    }
+
+    func addIgnorePattern(_ pattern: String) async throws {
+        try await addIgnorePatterns([pattern])
+    }
+
+    func addIgnorePatterns(_ patterns: [String]) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let ignorePath = repo.path.appendingPathComponent(".gitignore")
+        var content = ""
+
+        // Read existing content
+        if FileManager.default.fileExists(atPath: ignorePath.path) {
+            content = (try? String(contentsOf: ignorePath, encoding: .utf8)) ?? ""
+        }
+
+        // Add newline if needed
+        if !content.isEmpty && !content.hasSuffix("\n") {
+            content += "\n"
+        }
+
+        // Add new patterns
+        for pattern in patterns {
+            let trimmedPattern = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedPattern.isEmpty {
+                // Check if pattern already exists
+                let existingPatterns = content.components(separatedBy: .newlines)
+                if !existingPatterns.contains(trimmedPattern) {
+                    content += trimmedPattern + "\n"
+                }
+            }
+        }
+
+        // Write back
+        try content.write(to: ignorePath, atomically: true, encoding: .utf8)
+        logger.info("Added \(patterns.count) pattern(s) to .gitignore", category: .git)
+    }
+
+    func removeIgnorePattern(_ pattern: String) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let ignorePath = repo.path.appendingPathComponent(".gitignore")
+
+        guard FileManager.default.fileExists(atPath: ignorePath.path) else {
+            throw GitError.commandFailed(".gitignore file does not exist")
+        }
+
+        let content = try String(contentsOf: ignorePath, encoding: .utf8)
+        var lines = content.components(separatedBy: .newlines)
+
+        // Remove the pattern
+        let trimmedPattern = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        lines.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedPattern }
+
+        // Write back
+        let newContent = lines.joined(separator: "\n")
+        try newContent.write(to: ignorePath, atomically: true, encoding: .utf8)
+        logger.info("Removed pattern '\(pattern)' from .gitignore", category: .git)
+    }
+
+    func setIgnoreContent(_ content: String) async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let ignorePath = repo.path.appendingPathComponent(".gitignore")
+        try content.write(to: ignorePath, atomically: true, encoding: .utf8)
+        logger.info("Updated .gitignore content", category: .git)
+    }
+
+    func isPathIgnored(_ path: String) async throws -> Bool {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["check-ignore", "-q", path],
+            workingDirectory: repo.path
+        )
+
+        // Exit code 0 means ignored, 1 means not ignored
+        return result.exitCode == 0
+    }
+
+    func getIgnoredFiles() async throws -> [String] {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        // Get all ignored files (including untracked)
+        let result = await shellExecutor.executeGit(
+            arguments: ["ls-files", "--others", "--ignored", "--exclude-standard"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            return []
+        }
+
+        return result.output
+            .components(separatedBy: .newlines)
+            .filter { !$0.isEmpty }
+    }
+
+    // MARK: - Ignore Helpers
+
+    private func parseIgnoreFile(at path: URL, source: IgnoreSource) async -> IgnoreFile {
+        let exists = FileManager.default.fileExists(atPath: path.path)
+
+        guard exists else {
+            return IgnoreFile(path: path, source: source, patterns: [], exists: false)
+        }
+
+        guard let content = try? String(contentsOf: path, encoding: .utf8) else {
+            return IgnoreFile(path: path, source: source, patterns: [], exists: true)
+        }
+
+        let lines = content.components(separatedBy: .newlines)
+        var patterns: [IgnorePattern] = []
+
+        for (index, line) in lines.enumerated() {
+            let pattern = IgnorePattern(
+                pattern: line,
+                lineNumber: index + 1,
+                source: source
+            )
+            patterns.append(pattern)
+        }
+
+        return IgnoreFile(path: path, source: source, patterns: patterns, exists: true)
+    }
+
+    private func getGlobalIgnorePath() async -> URL? {
+        // Try to get global gitignore path from git config
+        let result = await shellExecutor.executeGit(
+            arguments: ["config", "--global", "core.excludesfile"]
+        )
+
+        if result.success {
+            let path = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !path.isEmpty {
+                // Expand ~ if present
+                let expandedPath = (path as NSString).expandingTildeInPath
+                return URL(fileURLWithPath: expandedPath)
+            }
+        }
+
+        // Default location: ~/.gitignore_global
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let defaultPath = homeDir.appendingPathComponent(".gitignore_global")
+        if FileManager.default.fileExists(atPath: defaultPath.path) {
+            return defaultPath
+        }
+
+        // Also check ~/.config/git/ignore
+        let configPath = homeDir.appendingPathComponent(".config/git/ignore")
+        if FileManager.default.fileExists(atPath: configPath.path) {
+            return configPath
+        }
+
+        return nil
+    }
 }

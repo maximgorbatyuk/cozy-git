@@ -20,6 +20,7 @@ final class MainViewModel {
         case tags = "Tags"
         case remotes = "Remotes"
         case submodules = "Submodules"
+        case gitignore = "Gitignore"
         case cleanup = "Cleanup"
         case automate = "Automate"
 
@@ -35,6 +36,7 @@ final class MainViewModel {
             case .tags: return "tag"
             case .remotes: return "network"
             case .submodules: return "shippingbox"
+            case .gitignore: return "eye.slash"
             case .cleanup: return "trash"
             case .automate: return "gearshape.2"
             }
