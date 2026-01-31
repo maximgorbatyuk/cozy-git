@@ -65,6 +65,7 @@ protocol GitStashServiceProtocol {
     func createStash(message: String?, includeUntracked: Bool) async throws -> Stash
     func applyStash(index: Int, pop: Bool) async throws
     func dropStash(index: Int) async throws
+    func getStashDiff(index: Int) async throws -> Diff
 }
 
 // MARK: - Tag Operations

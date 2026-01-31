@@ -17,6 +17,8 @@ struct HistoryTab: View {
     @State private var selectedFileIndex: Int = 0
     @State private var checkoutError: String?
     @State private var showCheckoutError: Bool = false
+    @State private var showFileDiffSheet: Bool = false
+    @State private var selectedFileDiff: FileDiff?
 
     var body: some View {
         if viewModel.repository != nil {
@@ -33,6 +35,11 @@ struct HistoryTab: View {
                     Button("OK", role: .cancel) { }
                 } message: {
                     Text(checkoutError ?? "Unknown error occurred")
+                }
+                .sheet(isPresented: $showFileDiffSheet) {
+                    if let fileDiff = selectedFileDiff {
+                        FileDiffSheet(fileDiff: fileDiff, commitHash: selectedCommit?.shortHash)
+                    }
                 }
         } else {
             noRepositoryView
@@ -240,6 +247,11 @@ struct HistoryTab: View {
                         }
                         .tag(index)
                         .padding(.vertical, 2)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            selectedFileDiff = file
+                            showFileDiffSheet = true
+                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -875,6 +887,141 @@ private struct FlowLayout: Layout {
                 self.size.width = max(self.size.width, x)
             }
             self.size.height = y + rowHeight
+        }
+    }
+}
+
+// MARK: - File Diff Sheet
+
+private struct FileDiffSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let fileDiff: FileDiff
+    let commitHash: String?
+
+    @State private var diffViewMode: DiffViewMode = .sideBySide
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(fileDiff.displayName)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+
+                    HStack(spacing: 12) {
+                        if let hash = commitHash {
+                            Label(hash, systemImage: "number")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        if fileDiff.additions > 0 {
+                            Text("+\(fileDiff.additions)")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                        }
+                        if fileDiff.deletions > 0 {
+                            Text("-\(fileDiff.deletions)")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+
+                        fileStatusBadge
+                    }
+                }
+
+                Spacer()
+
+                // View mode toggle
+                Picker("", selection: $diffViewMode) {
+                    ForEach(DiffViewMode.allCases, id: \.self) { mode in
+                        Image(systemName: mode.icon)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 80)
+                .help("Switch between Unified and Side-by-Side view")
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                        .font(.title2)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            // Diff content
+            if fileDiff.isBinary {
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.zipper")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary)
+                    Text("Binary file")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text("Cannot display diff for binary files")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if fileDiff.hunks.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary)
+                    Text("No changes to display")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                switch diffViewMode {
+                case .unified:
+                    UnifiedDiffView(fileDiff: fileDiff)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .sideBySide:
+                    SideBySideDiffView(fileDiff: fileDiff)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        }
+        .frame(minWidth: 600, idealWidth: 900, maxWidth: .infinity,
+               minHeight: 400, idealHeight: 600, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var fileStatusBadge: some View {
+        if fileDiff.isNewFile {
+            Text("New")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.green.opacity(0.2))
+                .foregroundColor(.green)
+                .clipShape(Capsule())
+        } else if fileDiff.isDeletedFile {
+            Text("Deleted")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.red.opacity(0.2))
+                .foregroundColor(.red)
+                .clipShape(Capsule())
+        } else if fileDiff.isRenamed {
+            Text("Renamed")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.blue.opacity(0.2))
+                .foregroundColor(.blue)
+                .clipShape(Capsule())
         }
     }
 }

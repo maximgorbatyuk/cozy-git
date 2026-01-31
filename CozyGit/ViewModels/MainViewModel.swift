@@ -16,6 +16,7 @@ final class MainViewModel {
         case changes = "Changes"
         case branches = "Branches"
         case history = "History"
+        case stash = "Stash"
         case cleanup = "Cleanup"
         case automate = "Automate"
 
@@ -27,6 +28,7 @@ final class MainViewModel {
             case .changes: return "doc.badge.plus"
             case .branches: return "arrow.triangle.branch"
             case .history: return "clock"
+            case .stash: return "tray.and.arrow.down"
             case .cleanup: return "trash"
             case .automate: return "gearshape.2"
             }

@@ -1009,6 +1009,24 @@ final class GitService: GitServiceProtocol {
         }
     }
 
+    func getStashDiff(index: Int) async throws -> Diff {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        // Get the diff for the stash
+        let result = await shellExecutor.executeGit(
+            arguments: ["stash", "show", "-p", "--stat", "stash@{\(index)}"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to get stash diff")
+        }
+
+        return parseDiffOutput(result.output)
+    }
+
     // MARK: - Tag Operations
 
     func listTags() async throws -> [Tag] {

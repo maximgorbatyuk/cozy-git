@@ -1411,12 +1411,12 @@ protocol GitService: GitRepositoryService,
 | 3 | Basic Commit Workflow | Week 3 | ✅ | Phase 2 |
 | 4 | Branch Management (CGF-1) | Week 4-5 | ✅ | Phase 3 |
 | 5 | Fetch & Pull Operations | Week 6 | ✅ | Phase 4 |
-| 6 | Push Operations | Week 7 | ⬜ | Phase 5 |
-| 7 | Merge & Rebase Operations | Week 8 | ⬜ | Phase 6 |
-| 8 | Unified Diff Viewer | Week 9 | ⬜ | Phase 7 |
-| 9 | Side-by-Side Diff Viewer | Week 10-11 | ✅ | Phase 9 |
-| 10 | Commit Graph Visualization | Week 12 | ✅ | Phase 10 |
-| 11 | Stash Operations | Week 13 | ⬜ | Phase 10 |
+| 6 | Push Operations | Week 7 | ✅ | Phase 5 |
+| 7 | Merge & Rebase Operations | Week 8 | ✅ | Phase 6 |
+| 8 | Unified Diff Viewer | Week 9 | ✅ | Phase 7 |
+| 9 | Side-by-Side Diff Viewer | Week 10-11 | ✅ | Phase 8 |
+| 10 | Commit Graph Visualization | Week 12 | ✅ | Phase 9 |
+| 11 | Stash Operations | Week 13 | ✅ | Phase 10 |
 | 12 | Tag Operations | Week 14 | ⬜ | Phase 11 |
 | 13 | Remote Management | Week 15 | ⬜ | Phase 12 |
 | 14 | Advanced Git Operations | Week 16 | ⬜ | Phase 13 |
@@ -1969,7 +1969,7 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 9: Side-by-Side Diff Viewer (Week 10-11)
+### Phase 9: Side-by-Side Diff Viewer (Week 10-11) ✅ DONE
 **Dependencies**: Phase 8
 **Deliverables**: Full side-by-side diff with all advanced features
 
@@ -2072,9 +2072,14 @@ protocol GitService: GitRepositoryService,
 - [x] All features toggleable
 - [x] User experience is polished
 
+**Files Created/Modified**:
+- `CozyGit/Views/Components/SideBySideDiffView.swift` - Side-by-side diff viewer with word-level diff, line alignment, synchronized scrolling
+- `CozyGit/Views/Tabs/ChangesTab.swift` - Added diff view mode toggle (Unified/Side-by-Side)
+- `CozyGit/Views/Tabs/HistoryTab.swift` - Added diff viewer in CommitDetailSheet
+
 ---
 
-### Phase 10: Commit Graph Visualization (Week 12)
+### Phase 10: Commit Graph Visualization (Week 12) ✅ DONE
 **Dependencies**: Phase 9
 **Deliverables**: Visual branch/commit graph with parallel vertical lines like Fork/GitKraken
 
@@ -2168,9 +2173,24 @@ protocol GitService: GitRepositoryService,
 - [x] Performance acceptable for large repos
 - [x] Navigation is smooth and intuitive
 
+**Additional Features Implemented**:
+- [x] Branch/tag badges displayed inline with commit messages
+- [x] Current branch highlighted with bold border
+- [x] Double-click on branch badge to checkout
+- [x] Remote branch checkout creates local tracking branch
+- [x] `--all` flag added to show commits from all branches
+- [x] Lane assignment prefers parent's lane for visual continuity
+- [x] History tab layout: VSplitView with graph on top, HSplitView (files | details) on bottom
+- [x] Changed files list shows file status icons and +/- counts
+
+**Files Created/Modified**:
+- `CozyGit/Views/Components/CommitGraphView.swift` - Complete commit graph with lane algorithm, branch badges, checkout support
+- `CozyGit/Views/Tabs/HistoryTab.swift` - Integrated graph view with VSplitView layout, checkout handling, error alerts
+- `CozyGit/Services/GitService.swift` - Added `--all` flag, improved checkout to get actual branch name after remote checkout
+
 ---
 
-### Phase 11: Stash Operations (Week 13)
+### Phase 11: Stash Operations (Week 13) ✅ DONE
 **Dependencies**: Phase 10
 **Deliverables**: Can create, view, and apply stashes
 
@@ -2221,12 +2241,20 @@ protocol GitService: GitRepositoryService,
 - Handle stash apply errors
 
 **Completion Criteria**:
-- [ ] Can create stashes with messages
-- [ ] Can list all stashes
-- [ ] Can apply/pop/drop stashes
-- [ ] Can view stash diffs
-- [ ] Stash options work correctly
-- [ ] UI is intuitive and clear
+- [x] Can create stashes with messages
+- [x] Can list all stashes
+- [x] Can apply/pop/drop stashes
+- [x] Can view stash diffs
+- [x] Stash options work correctly (include untracked)
+- [x] UI is intuitive and clear
+
+**Files Created/Modified**:
+- `CozyGit/Views/Tabs/StashTab.swift` - New stash management tab with list, details, and diff views
+- `CozyGit/ViewModels/MainViewModel.swift` - Added `stash` case to Tab enum
+- `CozyGit/Views/MainView.swift` - Added StashTab to navigation
+- `CozyGit/Services/Protocols/GitServiceProtocol.swift` - Added `getStashDiff(index:)` method
+- `CozyGit/Services/GitService.swift` - Implemented `getStashDiff(index:)` method
+- `CozyGit/Views/Tabs/ChangesTab.swift` - Added "Stash Changes" button and StashChangesSheet
 
 ---
 

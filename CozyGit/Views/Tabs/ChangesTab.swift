@@ -10,6 +10,7 @@ struct ChangesTab: View {
 
     @State private var selectedFile: FileStatus?
     @State private var showCommitDialog = false
+    @State private var showStashSheet = false
     @State private var currentDiff: FileDiff?
     @State private var isLoadingDiff = false
 
@@ -21,6 +22,11 @@ struct ChangesTab: View {
                 }
                 .sheet(isPresented: $showCommitDialog) {
                     CommitDialog(viewModel: viewModel)
+                }
+                .sheet(isPresented: $showStashSheet) {
+                    StashChangesSheet { message, includeUntracked in
+                        await viewModel.createStash(message: message, includeUntracked: includeUntracked)
+                    }
                 }
         } else {
             noRepositoryView
@@ -47,6 +53,19 @@ struct ChangesTab: View {
                     }
                     .pickerStyle(.menu)
                     .frame(width: 100)
+
+                    if !viewModel.fileStatuses.isEmpty {
+                        Divider()
+                            .frame(height: 16)
+
+                        Button {
+                            showStashSheet = true
+                        } label: {
+                            Image(systemName: "tray.and.arrow.down")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Stash all changes")
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -314,6 +333,94 @@ struct ChangesTab: View {
             title: "No Repository Open",
             message: "Open a repository to view changes"
         )
+    }
+}
+
+// MARK: - Stash Changes Sheet
+
+private struct StashChangesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var message: String = ""
+    @State private var includeUntracked: Bool = false
+    @State private var isCreating: Bool = false
+
+    let onCreate: (String?, Bool) async -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Stash Changes")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            // Content
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Message (optional)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    TextField("Describe your changes...", text: $message)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Toggle("Include untracked files", isOn: $includeUntracked)
+                    .help("Also stash files that are not yet tracked by git")
+
+                Text("This will save your current working directory changes and revert to a clean state.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+
+            Divider()
+
+            // Footer
+            HStack {
+                Spacer()
+
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button {
+                    isCreating = true
+                    Task {
+                        await onCreate(message.isEmpty ? nil : message, includeUntracked)
+                        isCreating = false
+                        dismiss()
+                    }
+                } label: {
+                    if isCreating {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.horizontal, 8)
+                    } else {
+                        Text("Stash")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isCreating)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 400)
     }
 }
 

@@ -76,6 +76,8 @@ struct MainView: View {
             BranchesTab(viewModel: repositoryViewModel)
         case .history:
             HistoryTab(viewModel: repositoryViewModel)
+        case .stash:
+            StashTab(viewModel: repositoryViewModel)
         case .cleanup:
             CleanupTab(viewModel: repositoryViewModel)
         case .automate:
