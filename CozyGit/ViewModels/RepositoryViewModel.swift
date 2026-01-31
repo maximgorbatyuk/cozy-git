@@ -30,6 +30,11 @@ final class RepositoryViewModel {
 
     var remoteStatus: RemoteTrackingStatus?
 
+    // MARK: - Statistics
+
+    var statistics: RepositoryStatistics?
+    var isLoadingStatistics: Bool = false
+
     // MARK: - Filtering
 
     var searchText: String = ""
@@ -100,6 +105,23 @@ final class RepositoryViewModel {
         } catch {
             // Don't treat this as a critical error
             remoteStatus = nil
+        }
+    }
+
+    func loadStatistics(months: Int = 6) async {
+        // Clear old statistics to show loading state
+        statistics = nil
+        isLoadingStatistics = true
+        defer { isLoadingStatistics = false }
+
+        let calendar = Calendar.current
+        guard let sinceDate = calendar.date(byAdding: .month, value: -months, to: Date()) else { return }
+
+        do {
+            statistics = try await gitService.getRepositoryStatistics(since: sinceDate)
+        } catch {
+            // Don't treat this as a critical error
+            statistics = nil
         }
     }
 

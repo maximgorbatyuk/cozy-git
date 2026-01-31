@@ -361,6 +361,8 @@ struct CommitGraphRow: View {
     let maxLanes: Int
     var currentBranch: String?
     var onBranchClick: ((String, String?) -> Void)?
+    var onCommitClick: (() -> Void)?
+    var onCommitDoubleClick: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -374,6 +376,12 @@ struct CommitGraphRow: View {
         .frame(height: GraphConstants.rowHeight)
         .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            onCommitDoubleClick?()
+        }
+        .onTapGesture(count: 1) {
+            onCommitClick?()
+        }
     }
 
     private var graphPortion: some View {
@@ -529,11 +537,13 @@ struct CommitGraphRow: View {
                 NSCursor.pop()
             }
         }
-        .onTapGesture(count: 2) {
-            if let branch = branchName {
-                onBranchClick?(branch, isRemoteBranch ? ref : nil)
+        .highPriorityGesture(
+            TapGesture(count: 2).onEnded {
+                if let branch = branchName {
+                    onBranchClick?(branch, isRemoteBranch ? ref : nil)
+                }
             }
-        }
+        )
         .help(isCurrentBranch ? "Current branch" : (isClickable ? "Double-click to checkout '\(branchName ?? "")'" : ""))
     }
 
@@ -582,15 +592,15 @@ struct CommitGraphListView: View {
                         isSelected: selectedCommit?.hash == node.commit.hash,
                         maxLanes: maxLanes,
                         currentBranch: currentBranch,
-                        onBranchClick: onBranchClick
+                        onBranchClick: onBranchClick,
+                        onCommitClick: {
+                            selectedCommit = node.commit
+                        },
+                        onCommitDoubleClick: {
+                            selectedCommit = node.commit
+                            onDoubleClick(node.commit)
+                        }
                     )
-                    .onTapGesture {
-                        selectedCommit = node.commit
-                    }
-                    .onTapGesture(count: 2) {
-                        selectedCommit = node.commit
-                        onDoubleClick(node.commit)
-                    }
 
                     if node.id != nodes.last?.id {
                         Divider()

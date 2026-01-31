@@ -503,19 +503,11 @@ struct HistoryTab: View {
     // MARK: - Branch Checkout
 
     private func checkoutBranch(_ branchName: String, remoteRef: String? = nil) async {
-        let gitService = DependencyContainer.shared.gitService
-
         do {
-            if let remoteRef = remoteRef {
-                // Remote branch: checkout with tracking
-                try await gitService.checkoutBranch(name: remoteRef)
-            } else {
-                // Local branch: simple checkout
-                try await gitService.checkoutBranch(name: branchName)
-            }
-            // Refresh branches and commits after checkout
-            await viewModel.loadBranches()
-            await viewModel.loadCommits(limit: 100)
+            let targetBranch = remoteRef ?? branchName
+            try await viewModel.checkoutBranch(name: targetBranch)
+            // Refresh commits after checkout - UI will reflect the branch change
+            await viewModel.loadCommits(limit: currentLimit)
         } catch {
             checkoutError = error.localizedDescription
             showCheckoutError = true

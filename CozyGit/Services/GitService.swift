@@ -2721,4 +2721,181 @@ final class GitService: GitServiceProtocol {
 
         return nil
     }
+
+    // MARK: - Statistics Operations
+
+    /// Get repository statistics for a time period
+    func getRepositoryStatistics(since: Date) async throws -> RepositoryStatistics {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        let sinceString = dateFormatter.string(from: since)
+
+        // Get all stats in parallel
+        async let commitCount = getCommitCount(since: sinceString, repoPath: repo.path)
+        async let branchCount = getBranchCount(repoPath: repo.path)
+        async let authorStats = getAuthorStats(since: sinceString, repoPath: repo.path)
+        async let dailyActivity = getDailyActivity(since: sinceString, repoPath: repo.path)
+
+        return RepositoryStatistics(
+            periodStart: since,
+            periodEnd: Date(),
+            totalCommits: try await commitCount,
+            totalBranches: try await branchCount,
+            authorStats: try await authorStats,
+            dailyActivity: try await dailyActivity
+        )
+    }
+
+    /// Get commit count since a date
+    private func getCommitCount(since: String, repoPath: URL) async throws -> Int {
+        let result = await shellExecutor.executeGit(
+            arguments: ["rev-list", "--count", "--since=\(since)", "HEAD"],
+            workingDirectory: repoPath
+        )
+
+        if result.success {
+            let countStr = result.output.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            return Int(countStr) ?? 0
+        }
+        return 0
+    }
+
+    /// Get total branch count
+    private func getBranchCount(repoPath: URL) async throws -> Int {
+        let result = await shellExecutor.executeGit(
+            arguments: ["branch", "-a"],
+            workingDirectory: repoPath
+        )
+
+        if result.success {
+            let lines = result.output.components(separatedBy: CharacterSet.newlines)
+            return lines.filter { !$0.trimmingCharacters(in: CharacterSet.whitespaces).isEmpty }.count
+        }
+        return 0
+    }
+
+    /// Get author statistics since a date
+    private func getAuthorStats(since: String, repoPath: URL) async throws -> [AuthorStats] {
+        let result = await shellExecutor.executeGit(
+            arguments: ["shortlog", "-sne", "--since=\(since)", "HEAD"],
+            workingDirectory: repoPath
+        )
+
+        guard result.success else { return [] }
+
+        var authors: [AuthorStats] = []
+        var totalCommits = 0
+
+        // Parse output: "    42\tJohn Doe <john@example.com>"
+        let lines = result.output.components(separatedBy: CharacterSet.newlines)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: CharacterSet.whitespaces)
+            guard !trimmed.isEmpty else { continue }
+
+            // Split by tab
+            let parts = trimmed.components(separatedBy: "\t")
+            guard parts.count >= 2,
+                  let count = Int(parts[0].trimmingCharacters(in: CharacterSet.whitespaces)) else { continue }
+
+            let nameEmail = parts[1]
+            var name = nameEmail
+            var email = ""
+
+            // Extract email from "Name <email>"
+            if let emailStart = nameEmail.firstIndex(of: "<"),
+               let emailEnd = nameEmail.firstIndex(of: ">") {
+                name = String(nameEmail[..<emailStart]).trimmingCharacters(in: CharacterSet.whitespaces)
+                email = String(nameEmail[nameEmail.index(after: emailStart)..<emailEnd])
+            }
+
+            authors.append(AuthorStats(
+                name: name,
+                email: email,
+                commitCount: count,
+                percentage: 0 // Will be calculated after
+            ))
+            totalCommits += count
+        }
+
+        // Calculate percentages
+        if totalCommits > 0 {
+            authors = authors.map { author in
+                AuthorStats(
+                    name: author.name,
+                    email: author.email,
+                    commitCount: author.commitCount,
+                    percentage: Double(author.commitCount) / Double(totalCommits) * 100
+                )
+            }
+        }
+
+        // Sort by commit count descending
+        return authors.sorted { $0.commitCount > $1.commitCount }
+    }
+
+    /// Get daily activity since a date
+    private func getDailyActivity(since: String, repoPath: URL) async throws -> [DailyActivity] {
+        let result = await shellExecutor.executeGit(
+            arguments: ["log", "--since=\(since)", "--format=%ad", "--date=short"],
+            workingDirectory: repoPath
+        )
+
+        guard result.success else { return [] }
+
+        // Count commits per day manually
+        var dateCounts: [String: Int] = [:]
+        let lines = result.output.components(separatedBy: CharacterSet.newlines)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: CharacterSet.whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            dateCounts[trimmed, default: 0] += 1
+        }
+
+        var activities: [DailyActivity] = []
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+
+        for (dateStr, count) in dateCounts {
+            if let date = dateFormatter.date(from: dateStr) {
+                activities.append(DailyActivity(date: date, commitCount: count))
+            }
+        }
+
+        // Fill in missing days with zero commits
+        let sinceDate = dateFormatter.date(from: String(since.prefix(10))) ?? Date().addingTimeInterval(-180 * 24 * 3600)
+        return fillMissingDays(activities: activities, since: sinceDate)
+    }
+
+    /// Fill in missing days with zero activity
+    private func fillMissingDays(activities: [DailyActivity], since: Date) -> [DailyActivity] {
+        let calendar = Calendar.current
+        let endDate = Date()
+
+        // Create a dictionary for quick lookup
+        var activityByDate: [String: Int] = [:]
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+
+        for activity in activities {
+            let key = dateFormatter.string(from: activity.date)
+            activityByDate[key] = activity.commitCount
+        }
+
+        // Generate all days in the range
+        var result: [DailyActivity] = []
+        var currentDate = since
+
+        while currentDate <= endDate {
+            let key = dateFormatter.string(from: currentDate)
+            let count = activityByDate[key] ?? 0
+            result.append(DailyActivity(date: currentDate, commitCount: count))
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? endDate
+        }
+
+        return result
+    }
 }
