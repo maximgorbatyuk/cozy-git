@@ -13,9 +13,9 @@ final class MainViewModel {
 
     enum Tab: String, CaseIterable, Identifiable {
         case overview = "Overview"
+        case history = "History"
         case changes = "Changes"
         case branches = "Branches"
-        case history = "History"
         case stash = "Stash"
         case tags = "Tags"
         case remotes = "Remotes"

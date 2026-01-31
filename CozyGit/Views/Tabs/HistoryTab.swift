@@ -40,6 +40,17 @@ struct HistoryTab: View {
     @State private var showBlameSheet: Bool = false
     @State private var blameFilePath: String?
 
+    // Remote operations
+    @State private var isFetching: Bool = false
+    @State private var isPulling: Bool = false
+    @State private var isPushing: Bool = false
+
+    // Remote operation result states
+    enum OperationResult { case none, success, failure }
+    @State private var fetchResult: OperationResult = .none
+    @State private var pullResult: OperationResult = .none
+    @State private var pushResult: OperationResult = .none
+
     var body: some View {
         if viewModel.repository != nil {
             historyContent
@@ -122,6 +133,63 @@ struct HistoryTab: View {
         VSplitView {
             // Top: Revision Graph
             VStack(alignment: .leading, spacing: 0) {
+                // Header with title and remote operation buttons
+                HStack {
+                    Text("History")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    Spacer()
+
+                    // Remote operation buttons
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await performFetch() }
+                        } label: {
+                            remoteOperationIcon(
+                                isLoading: isFetching,
+                                result: fetchResult,
+                                defaultIcon: "arrow.down.circle"
+                            )
+                            Text("Fetch")
+                        }
+                        .disabled(isFetching || isPulling || isPushing)
+                        .help("Fetch changes from remote")
+
+                        Button {
+                            Task { await performPull() }
+                        } label: {
+                            remoteOperationIcon(
+                                isLoading: isPulling,
+                                result: pullResult,
+                                defaultIcon: "arrow.down.to.line"
+                            )
+                            Text("Pull")
+                        }
+                        .disabled(isFetching || isPulling || isPushing)
+                        .help("Pull changes from remote")
+
+                        Button {
+                            Task { await performPush() }
+                        } label: {
+                            remoteOperationIcon(
+                                isLoading: isPushing,
+                                result: pushResult,
+                                defaultIcon: "arrow.up.to.line"
+                            )
+                            Text("Push")
+                        }
+                        .disabled(isFetching || isPulling || isPushing)
+                        .help("Push changes to remote")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.bar)
+
+                Divider()
+
                 // Search Bar
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -153,7 +221,7 @@ struct HistoryTab: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(.bar)
+                .background(Color(nsColor: .controlBackgroundColor))
 
                 Divider()
 
@@ -713,6 +781,83 @@ struct HistoryTab: View {
             showOperationError = true
         }
     }
+
+    // MARK: - Remote Operations
+
+    @ViewBuilder
+    private func remoteOperationIcon(isLoading: Bool, result: OperationResult, defaultIcon: String) -> some View {
+        if isLoading {
+            ProgressView()
+                .scaleEffect(0.7)
+                .frame(width: 16, height: 16)
+        } else {
+            switch result {
+            case .none:
+                Image(systemName: defaultIcon)
+            case .success:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+            case .failure:
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+            }
+        }
+    }
+
+    private func performFetch() async {
+        isFetching = true
+        fetchResult = .none
+        let result = await viewModel.fetchWithResult()
+        isFetching = false
+
+        if result.success {
+            await viewModel.loadCommits(limit: currentLimit)
+            fetchResult = .success
+        } else {
+            fetchResult = .failure
+        }
+
+        // Reset icon after 2 seconds
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        fetchResult = .none
+    }
+
+    private func performPull() async {
+        isPulling = true
+        pullResult = .none
+
+        do {
+            let result = try await viewModel.pullWithStrategy()
+            await viewModel.loadCommits(limit: currentLimit)
+            pullResult = result.success ? .success : .failure
+        } catch {
+            pullResult = .failure
+        }
+
+        isPulling = false
+
+        // Reset icon after 2 seconds
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        pullResult = .none
+    }
+
+    private func performPush() async {
+        isPushing = true
+        pushResult = .none
+
+        do {
+            let result = try await viewModel.pushWithOptions(PushOptions())
+            pushResult = result.success ? .success : .failure
+        } catch {
+            pushResult = .failure
+        }
+
+        isPushing = false
+
+        // Reset icon after 2 seconds
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        pushResult = .none
+    }
 }
 
 // MARK: - Commit Row
@@ -842,7 +987,8 @@ private struct CommitDetailSheet: View {
             }
             .padding()
         }
-        .frame(width: 900, height: 600)
+        .frame(minWidth: 700, idealWidth: 900, maxWidth: .infinity,
+               minHeight: 500, idealHeight: 600, maxHeight: .infinity)
         .task {
             await loadCommitDiff()
         }
