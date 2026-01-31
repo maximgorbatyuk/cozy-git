@@ -8,6 +8,8 @@ import SwiftUI
 struct MainView: View {
     @State private var viewModel = DependencyContainer.shared.mainViewModel
     @State private var repositoryViewModel = DependencyContainer.shared.repositoryViewModel
+    @State private var showShortcutsHelp = false
+    @State private var showCommitDialog = false
 
     var body: some View {
         NavigationSplitView {
@@ -53,6 +55,12 @@ struct MainView: View {
                 }
             }
         }
+        .sheet(isPresented: $showShortcutsHelp) {
+            ShortcutsHelpView()
+        }
+        .sheet(isPresented: $showCommitDialog) {
+            CommitDialog(viewModel: repositoryViewModel)
+        }
         .onChange(of: viewModel.currentRepository) { _, newRepo in
             repositoryViewModel.repository = newRepo
             if newRepo != nil {
@@ -61,6 +69,67 @@ struct MainView: View {
                 }
             }
         }
+        // Hidden buttons for keyboard shortcuts
+        .background {
+            keyboardShortcutButtons
+        }
+    }
+
+    // MARK: - Keyboard Shortcut Buttons
+
+    @ViewBuilder
+    private var keyboardShortcutButtons: some View {
+        Group {
+            // Navigation shortcuts
+            Button("Overview") { viewModel.selectedTab = .overview }
+                .keyboardShortcut("1", modifiers: .command)
+            Button("Changes") { viewModel.selectedTab = .changes }
+                .keyboardShortcut("2", modifiers: .command)
+            Button("Branches") { viewModel.selectedTab = .branches }
+                .keyboardShortcut("3", modifiers: .command)
+            Button("History") { viewModel.selectedTab = .history }
+                .keyboardShortcut("4", modifiers: .command)
+            Button("Stash") { viewModel.selectedTab = .stash }
+                .keyboardShortcut("5", modifiers: .command)
+            Button("Tags") { viewModel.selectedTab = .tags }
+                .keyboardShortcut("6", modifiers: .command)
+            Button("Remotes") { viewModel.selectedTab = .remotes }
+                .keyboardShortcut("7", modifiers: .command)
+            Button("Submodules") { viewModel.selectedTab = .submodules }
+                .keyboardShortcut("8", modifiers: .command)
+            Button("Gitignore") { viewModel.selectedTab = .gitignore }
+                .keyboardShortcut("9", modifiers: .command)
+            Button("Automation") { viewModel.selectedTab = .automate }
+                .keyboardShortcut("0", modifiers: .command)
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+
+        Group {
+            // Git operations
+            Button("Commit") {
+                if viewModel.currentRepository != nil {
+                    showCommitDialog = true
+                }
+            }
+            .keyboardShortcut("k", modifiers: .command)
+
+            Button("Refresh") {
+                if viewModel.currentRepository != nil {
+                    Task {
+                        await viewModel.refreshRepository()
+                        await repositoryViewModel.loadAllData()
+                    }
+                }
+            }
+            .keyboardShortcut("r", modifiers: .command)
+
+            // Help
+            Button("Shortcuts") { showShortcutsHelp = true }
+                .keyboardShortcut("/", modifiers: .command)
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
     }
 
     // MARK: - Detail View
