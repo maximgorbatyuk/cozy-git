@@ -490,6 +490,36 @@ final class RepositoryViewModel {
         }
     }
 
+    // MARK: - Tag Operations
+
+    func createTag(name: String, message: String?, commit: String?) async {
+        do {
+            _ = try await gitService.createTag(name: name, message: message, commit: commit)
+            await loadTags()
+        } catch {
+            handleError(error)
+        }
+    }
+
+    func deleteTag(_ tag: Tag) async {
+        do {
+            try await gitService.deleteTag(name: tag.name)
+            await loadTags()
+        } catch {
+            handleError(error)
+        }
+    }
+
+    func deleteTagFromRemote(_ tag: Tag, remote: String = "origin") async {
+        do {
+            // Delete from remote: git push origin --delete tag-name
+            try await gitService.deleteRemoteTag(name: tag.name, remote: remote)
+            await loadTags()
+        } catch {
+            handleError(error)
+        }
+    }
+
     // MARK: - Error Handling
 
     private func handleError(_ error: Error) {

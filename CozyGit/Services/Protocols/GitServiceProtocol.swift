@@ -74,6 +74,7 @@ protocol GitTagServiceProtocol {
     func listTags() async throws -> [Tag]
     func createTag(name: String, message: String?, commit: String?) async throws -> Tag
     func deleteTag(name: String) async throws
+    func deleteRemoteTag(name: String, remote: String) async throws
 }
 
 // MARK: - Merge & Rebase Operations

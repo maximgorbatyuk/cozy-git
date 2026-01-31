@@ -1089,6 +1089,21 @@ final class GitService: GitServiceProtocol {
         }
     }
 
+    func deleteRemoteTag(name: String, remote: String = "origin") async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["push", remote, "--delete", "refs/tags/\(name)"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to delete remote tag")
+        }
+    }
+
     // MARK: - Private Parsing Methods
 
     private func parseStatusOutput(_ output: String) -> [FileStatus] {

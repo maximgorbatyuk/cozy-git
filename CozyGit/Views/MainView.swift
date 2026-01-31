@@ -78,6 +78,8 @@ struct MainView: View {
             HistoryTab(viewModel: repositoryViewModel)
         case .stash:
             StashTab(viewModel: repositoryViewModel)
+        case .tags:
+            TagsTab(viewModel: repositoryViewModel)
         case .cleanup:
             CleanupTab(viewModel: repositoryViewModel)
         case .automate:

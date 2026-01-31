@@ -1417,7 +1417,7 @@ protocol GitService: GitRepositoryService,
 | 9 | Side-by-Side Diff Viewer | Week 10-11 | ✅ | Phase 8 |
 | 10 | Commit Graph Visualization | Week 12 | ✅ | Phase 9 |
 | 11 | Stash Operations | Week 13 | ✅ | Phase 10 |
-| 12 | Tag Operations | Week 14 | ⬜ | Phase 11 |
+| 12 | Tag Operations | Week 14 | ✅ | Phase 11 |
 | 13 | Remote Management | Week 15 | ⬜ | Phase 12 |
 | 14 | Advanced Git Operations | Week 16 | ⬜ | Phase 13 |
 | 15 | Submodule Support | Week 17 | ⬜ | Phase 14 |
@@ -2258,7 +2258,7 @@ protocol GitService: GitRepositoryService,
 
 ---
 
-### Phase 12: Tag Operations (Week 14)
+### Phase 12: Tag Operations (Week 14) ✅ DONE
 **Dependencies**: Phase 11
 **Deliverables**: Can create and manage tags
 
@@ -2306,12 +2306,20 @@ protocol GitService: GitRepositoryService,
 - Show tag selector for operations
 
 **Completion Criteria**:
-- [ ] Can create lightweight tags
-- [ ] Can create annotated tags
-- [ ] Can delete tags
-- [ ] Can push tags
-- [ ] Tag details display correctly
-- [ ] Tags shown in appropriate places
+- [x] Can create lightweight tags
+- [x] Can create annotated tags
+- [x] Can delete tags (local and remote)
+- [x] Can push tags (individual or all)
+- [x] Tag details display correctly
+- [x] Tags shown in appropriate places (commit graph badges)
+
+**Files Created/Modified**:
+- `CozyGit/Views/Tabs/TagsTab.swift` - New tag management tab with list, details, create dialog
+- `CozyGit/ViewModels/MainViewModel.swift` - Added `tags` case to Tab enum
+- `CozyGit/Views/MainView.swift` - Added TagsTab to navigation
+- `CozyGit/ViewModels/RepositoryViewModel.swift` - Added `createTag`, `deleteTag`, `deleteTagFromRemote` methods
+- `CozyGit/Services/Protocols/GitServiceProtocol.swift` - Added `deleteRemoteTag` method
+- `CozyGit/Services/GitService.swift` - Implemented `deleteRemoteTag` method
 
 ---
 
