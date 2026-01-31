@@ -11,6 +11,10 @@ struct HistoryTab: View {
     @State private var searchText: String = ""
     @State private var selectedCommit: Commit?
     @State private var showCommitDetail = false
+    @State private var showGraphView: Bool = true
+    @State private var commitDiff: Diff?
+    @State private var isLoadingDiff: Bool = false
+    @State private var selectedFileIndex: Int = 0
 
     var body: some View {
         if viewModel.repository != nil {
@@ -31,8 +35,8 @@ struct HistoryTab: View {
     // MARK: - History Content
 
     private var historyContent: some View {
-        HSplitView {
-            // Commit List
+        VSplitView {
+            // Top: Revision Graph
             VStack(alignment: .leading, spacing: 0) {
                 // Search Bar
                 HStack(spacing: 8) {
@@ -50,6 +54,18 @@ struct HistoryTab: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                    Divider()
+                        .frame(height: 16)
+
+                    // Graph view toggle
+                    Button {
+                        showGraphView.toggle()
+                    } label: {
+                        Image(systemName: showGraphView ? "point.3.connected.trianglepath.dotted" : "list.bullet")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(showGraphView ? "Switch to list view" : "Switch to graph view")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -57,7 +73,7 @@ struct HistoryTab: View {
 
                 Divider()
 
-                // Commit List
+                // Commit List/Graph
                 if filteredCommits.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "clock")
@@ -72,7 +88,17 @@ struct HistoryTab: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if showGraphView {
+                    // Graph View
+                    CommitGraphListView(
+                        commits: filteredCommits,
+                        selectedCommit: $selectedCommit,
+                        onDoubleClick: { commit in
+                            showCommitDetail = true
+                        }
+                    )
                 } else {
+                    // Simple List View
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(filteredCommits) { commit in
@@ -97,12 +123,32 @@ struct HistoryTab: View {
                     }
                 }
             }
-            .frame(minWidth: 350, maxWidth: 500)
+            .frame(minHeight: 200)
 
-            // Commit Details Preview
+            // Bottom: Changed Files + Commit Details
             if let commit = selectedCommit {
-                commitPreview(commit)
+                HSplitView {
+                    // Left: Changed Files List
+                    changedFilesList
+                        .frame(minWidth: 200, maxWidth: 350)
+
+                    // Right: Commit Details
+                    commitPreview(commit)
+                        .frame(minWidth: 300)
+                }
+                .frame(minHeight: 150)
+                .onChange(of: selectedCommit) { _, newCommit in
+                    if let commit = newCommit {
+                        Task {
+                            await loadCommitDiff(for: commit)
+                        }
+                    }
+                }
+                .task {
+                    await loadCommitDiff(for: commit)
+                }
             } else {
+                // No commit selected
                 VStack(spacing: 12) {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 32))
@@ -113,9 +159,119 @@ struct HistoryTab: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+                .frame(maxWidth: .infinity, minHeight: 150)
+            }
+        }
+    }
+
+    // MARK: - Changed Files List
+
+    private var changedFilesList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("Changed Files")
+                    .font(.headline)
+                Spacer()
+                if let diff = commitDiff {
+                    Text("\(diff.files.count)")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(.quaternary)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            Divider()
+
+            // File List
+            if isLoadingDiff {
+                VStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let diff = commitDiff, !diff.files.isEmpty {
+                List(selection: $selectedFileIndex) {
+                    ForEach(Array(diff.files.enumerated()), id: \.offset) { index, file in
+                        HStack(spacing: 8) {
+                            fileStatusIcon(for: file)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(file.displayName)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+
+                                HStack(spacing: 8) {
+                                    if file.additions > 0 {
+                                        Text("+\(file.additions)")
+                                            .font(.caption2)
+                                            .foregroundColor(.green)
+                                    }
+                                    if file.deletions > 0 {
+                                        Text("-\(file.deletions)")
+                                            .font(.caption2)
+                                            .foregroundColor(.red)
+                                    }
+                                }
+                            }
+
+                            Spacer()
+                        }
+                        .tag(index)
+                        .padding(.vertical, 2)
+                    }
+                }
+                .listStyle(.sidebar)
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc")
+                        .font(.system(size: 24))
+                        .foregroundColor(.secondary)
+                    Text("No files changed")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+    }
+
+    private func fileStatusIcon(for file: FileDiff) -> some View {
+        Group {
+            if file.isNewFile {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundColor(.green)
+            } else if file.isDeletedFile {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundColor(.red)
+            } else if file.isRenamed {
+                Image(systemName: "arrow.right.circle.fill")
+                    .foregroundColor(.blue)
+            } else if file.isBinary {
+                Image(systemName: "doc.zipper")
+                    .foregroundColor(.secondary)
+            } else {
+                Image(systemName: "pencil.circle.fill")
+                    .foregroundColor(.orange)
+            }
+        }
+        .font(.caption)
+    }
+
+    private func loadCommitDiff(for commit: Commit) async {
+        isLoadingDiff = true
+        selectedFileIndex = 0
+        let gitService = DependencyContainer.shared.gitService
+        commitDiff = try? await gitService.getDiffForCommit(hash: commit.hash)
+        isLoadingDiff = false
     }
 
     // MARK: - Commit Preview

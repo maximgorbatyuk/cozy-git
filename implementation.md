@@ -1415,7 +1415,7 @@ protocol GitService: GitRepositoryService,
 | 7 | Merge & Rebase Operations | Week 8 | ⬜ | Phase 6 |
 | 8 | Unified Diff Viewer | Week 9 | ⬜ | Phase 7 |
 | 9 | Side-by-Side Diff Viewer | Week 10-11 | ✅ | Phase 9 |
-| 10 | Commit Graph Visualization | Week 12 | ⬜ | Phase 10 |
+| 10 | Commit Graph Visualization | Week 12 | ✅ | Phase 10 |
 | 11 | Stash Operations | Week 13 | ⬜ | Phase 10 |
 | 12 | Tag Operations | Week 14 | ⬜ | Phase 11 |
 | 13 | Remote Management | Week 15 | ⬜ | Phase 12 |
@@ -2160,13 +2160,13 @@ protocol GitService: GitRepositoryService,
 - Toggle branch labels
 
 **Completion Criteria**:
-- [ ] Graph displays parallel branch lanes correctly
-- [ ] Commit nodes positioned on correct lanes
-- [ ] Merge lines curve smoothly between lanes
-- [ ] Branch colors are consistent and distinct
-- [ ] Selection syncs with commit details
-- [ ] Performance acceptable for large repos
-- [ ] Navigation is smooth and intuitive
+- [x] Graph displays parallel branch lanes correctly
+- [x] Commit nodes positioned on correct lanes
+- [x] Merge lines curve smoothly between lanes
+- [x] Branch colors are consistent and distinct
+- [x] Selection syncs with commit details
+- [x] Performance acceptable for large repos
+- [x] Navigation is smooth and intuitive
 
 ---
 
@@ -3015,7 +3015,7 @@ protocol GitService: GitRepositoryService,
 | 7 | Week 8 | Merge & Rebase | Phase 6 | ⬜ |
 | 8 | Week 9 | Unified diff viewer | Phase 7 | ⬜ |
 | 9 | Week 10-11 | Side-by-side diff | Phase 9 | ✅ |
-| 10 | Week 12 | Commit graph visualization | Phase 10 | ⬜ |
+| 10 | Week 12 | Commit graph visualization | Phase 10 | ✅ |
 | 11 | Week 13 | Stash operations | Phase 10 | ⬜ |
 | 12 | Week 14 | Tag operations | Phase 11 | ⬜ |
 | 13 | Week 15 | Remote management | Phase 12 | ⬜ |
