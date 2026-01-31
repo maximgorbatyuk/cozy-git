@@ -184,6 +184,31 @@ struct UnifiedDiffView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Accessibility
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(diffLineAccessibilityLabel(for: line))
+    }
+
+    private func diffLineAccessibilityLabel(for line: DiffLine) -> String {
+        let typeLabel: String
+        switch line.type {
+        case .addition:
+            typeLabel = String(localized: "Added line", comment: "Diff line addition")
+        case .deletion:
+            typeLabel = String(localized: "Removed line", comment: "Diff line deletion")
+        case .context:
+            typeLabel = String(localized: "Unchanged line", comment: "Diff line context")
+        case .hunkHeader:
+            typeLabel = String(localized: "Section header", comment: "Diff hunk header")
+        case .noNewline:
+            typeLabel = String(localized: "No newline at end of file", comment: "Diff no newline")
+        }
+
+        let lineNumber = line.newLineNumber ?? line.oldLineNumber
+        if let num = lineNumber {
+            return "\(typeLabel) \(num): \(line.content)"
+        }
+        return "\(typeLabel): \(line.content)"
     }
 
     private func linePrefix(for line: DiffLine) -> String {

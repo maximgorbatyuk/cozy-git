@@ -31,6 +31,7 @@ struct EmptyStateView: View {
             Image(systemName: icon)
                 .font(.system(size: 48))
                 .foregroundColor(.secondary)
+                .accessibilityHidden(true) // Icon is decorative
 
             Text(title)
                 .font(.title3)
@@ -44,10 +45,14 @@ struct EmptyStateView: View {
             if let actionTitle = actionTitle, let action = action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.borderedProminent)
+                    .accessibilityHint(String(localized: "Activate to \(actionTitle.lowercased())", comment: "Empty state action hint"))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+        // Combine into single accessible element for VoiceOver
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(message)")
     }
 }
 

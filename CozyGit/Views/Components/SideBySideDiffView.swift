@@ -338,9 +338,14 @@ struct SideBySideDiffView: View {
     @State private var scrollState = SyncScrollState()
     @State private var dividerPosition: CGFloat = 0.5
     @State private var currentChangeIndex: Int = 0
+    @State private var cachedAlignedLines: [AlignedDiffLine]?
 
     private var alignedLines: [AlignedDiffLine] {
-        LineAligner.alignLines(from: fileDiff)
+        if let cached = cachedAlignedLines {
+            return cached
+        }
+        // Use optimized line aligner with caching
+        return OptimizedLineAligner.alignLines(from: fileDiff)
     }
 
     /// Indices of lines that have changes (not context)
@@ -650,7 +655,8 @@ struct SideBySideDiffView: View {
     private func wordDiffView(oldLine: DiffLine?, newLine: DiffLine?, isLeft: Bool) -> some View {
         let oldContent = oldLine?.content ?? ""
         let newContent = newLine?.content ?? ""
-        let (oldSegments, newSegments) = WordDiff.compare(old: oldContent, new: newContent)
+        // Use optimized word diff with caching
+        let (oldSegments, newSegments) = OptimizedWordDiff.compare(old: oldContent, new: newContent)
 
         return HStack(spacing: 0) {
             ForEach(isLeft ? oldSegments : newSegments) { segment in

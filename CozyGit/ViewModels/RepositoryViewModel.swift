@@ -49,6 +49,11 @@ final class RepositoryViewModel {
 
     private let gitService: GitService
     private let logger = Logger.shared
+    private let cache = DependencyContainer.repositoryCache
+
+    // MARK: - Performance Settings
+
+    var useCaching: Bool = true
 
     // MARK: - Initialization
 
@@ -62,6 +67,9 @@ final class RepositoryViewModel {
         guard repository != nil else { return }
 
         isLoading = true
+
+        // Invalidate caches to get fresh data
+        await invalidateAllCaches()
 
         async let branchesTask = loadBranches()
         async let commitsTask = loadCommits()
@@ -78,6 +86,14 @@ final class RepositoryViewModel {
         isLoading = false
     }
 
+    /// Load data with optional cache bypass
+    func loadAllData(bypassCache: Bool) async {
+        if bypassCache {
+            await invalidateAllCaches()
+        }
+        await loadAllData()
+    }
+
     func loadRemoteStatus() async {
         do {
             remoteStatus = try await gitService.getAheadBehindCount()
@@ -88,24 +104,62 @@ final class RepositoryViewModel {
     }
 
     func loadBranches() async {
+        guard let repoPath = repository?.path.path else { return }
+
+        // Check cache first
+        if useCaching, let cached = await cache.getBranches(for: repoPath) {
+            branches = cached
+            return
+        }
+
         do {
-            branches = try await gitService.listBranches()
+            let result = try await gitService.listBranches()
+            branches = result
+            // Update cache
+            if useCaching {
+                await cache.setBranches(result, for: repoPath)
+            }
         } catch {
             handleError(error)
         }
     }
 
     func loadCommits(limit: Int = 50) async {
+        guard let repoPath = repository?.path.path else { return }
+
+        // Check cache first
+        if useCaching, let cached = await cache.getCommits(for: repoPath, limit: limit) {
+            commits = cached
+            return
+        }
+
         do {
-            commits = try await gitService.getHistory(limit: limit)
+            let result = try await gitService.getHistory(limit: limit)
+            commits = result
+            // Update cache
+            if useCaching {
+                await cache.setCommits(result, for: repoPath, limit: limit)
+            }
         } catch {
             handleError(error)
         }
     }
 
     func loadFileStatuses() async {
+        guard let repoPath = repository?.path.path else { return }
+
+        // Status changes frequently, use shorter cache or skip
+        if useCaching, let cached = await cache.getStatus(for: repoPath) {
+            fileStatuses = cached
+            return
+        }
+
         do {
-            fileStatuses = try await gitService.getStatus()
+            let result = try await gitService.getStatus()
+            fileStatuses = result
+            if useCaching {
+                await cache.setStatus(result, for: repoPath)
+            }
         } catch {
             handleError(error)
         }
@@ -275,10 +329,37 @@ final class RepositoryViewModel {
         try await addIgnorePattern(trimmedPath)
     }
 
+    // MARK: - Cache Invalidation
+
+    /// Invalidate all caches for the current repository
+    func invalidateAllCaches() async {
+        guard let repoPath = repository?.path.path else { return }
+        await cache.invalidateAll(for: repoPath)
+    }
+
+    /// Invalidate branch cache
+    private func invalidateBranchCache() async {
+        guard let repoPath = repository?.path.path else { return }
+        await cache.invalidateBranches(for: repoPath)
+    }
+
+    /// Invalidate commit cache
+    private func invalidateCommitCache() async {
+        guard let repoPath = repository?.path.path else { return }
+        await cache.invalidateCommits(for: repoPath)
+    }
+
+    /// Invalidate status cache
+    private func invalidateStatusCache() async {
+        guard let repoPath = repository?.path.path else { return }
+        await cache.invalidateStatus(for: repoPath)
+    }
+
     // MARK: - Branch Operations
 
     func createBranch(name: String, from: String? = nil) async throws -> Branch {
         let branch = try await gitService.createBranch(name: name, from: from)
+        await invalidateBranchCache()
         await loadBranches()
         return branch
     }

@@ -1,0 +1,294 @@
+/*
+  Localizable.strings
+  CozyGit
+
+  Phase 20: Accessibility & Localization
+  English (Base) localization
+*/
+
+// MARK: - App General
+
+"app.name" = "Cozy Git";
+"app.tagline" = "A cozy Git client for macOS";
+
+// MARK: - Navigation
+
+"nav.overview" = "Overview";
+"nav.changes" = "Changes";
+"nav.branches" = "Branches";
+"nav.history" = "History";
+"nav.stash" = "Stash";
+"nav.tags" = "Tags";
+"nav.remotes" = "Remotes";
+"nav.submodules" = "Submodules";
+"nav.gitignore" = "Gitignore";
+"nav.automation" = "Automation";
+"nav.cleanup" = "Cleanup";
+
+// MARK: - Common Actions
+
+"action.ok" = "OK";
+"action.cancel" = "Cancel";
+"action.close" = "Close";
+"action.save" = "Save";
+"action.delete" = "Delete";
+"action.edit" = "Edit";
+"action.add" = "Add";
+"action.remove" = "Remove";
+"action.refresh" = "Refresh";
+"action.copy" = "Copy";
+"action.search" = "Search";
+"action.filter" = "Filter";
+"action.select.all" = "Select All";
+"action.deselect.all" = "Deselect All";
+
+// MARK: - Repository
+
+"repo.open" = "Open Repository";
+"repo.close" = "Close Repository";
+"repo.clone" = "Clone Repository";
+"repo.init" = "Initialize Repository";
+"repo.recent" = "Recent Repositories";
+"repo.no.open" = "No Repository Open";
+"repo.no.open.message" = "Open a repository to get started";
+
+// MARK: - Branches
+
+"branch.current" = "Current Branch";
+"branch.local" = "Local Branches";
+"branch.remote" = "Remote Branches";
+"branch.create" = "Create Branch";
+"branch.delete" = "Delete Branch";
+"branch.rename" = "Rename Branch";
+"branch.checkout" = "Switch to Branch";
+"branch.merge" = "Merge Branch";
+"branch.rebase" = "Rebase";
+"branch.name.placeholder" = "Branch name";
+"branch.from.placeholder" = "Create from (optional)";
+"branch.merged" = "Merged Branches";
+"branch.stale" = "Stale Branches";
+
+// MARK: - Commits
+
+"commit.title" = "Commit";
+"commit.message.placeholder" = "Enter commit message...";
+"commit.message.required" = "Commit message is required";
+"commit.amend" = "Amend previous commit";
+"commit.staged.files" = "Staged Files";
+"commit.no.staged" = "No staged files";
+"commit.success" = "Changes committed successfully";
+
+// MARK: - Changes
+
+"changes.staged" = "Staged Changes";
+"changes.unstaged" = "Unstaged Changes";
+"changes.no.changes" = "No Changes";
+"changes.no.changes.message" = "Working directory is clean";
+"changes.stage" = "Stage";
+"changes.unstage" = "Unstage";
+"changes.stage.all" = "Stage All";
+"changes.unstage.all" = "Unstage All";
+"changes.discard" = "Discard Changes";
+"changes.discard.confirm" = "Are you sure you want to discard changes to this file? This cannot be undone.";
+
+// MARK: - File Status
+
+"status.modified" = "Modified";
+"status.added" = "Added";
+"status.deleted" = "Deleted";
+"status.renamed" = "Renamed";
+"status.copied" = "Copied";
+"status.untracked" = "Untracked";
+"status.ignored" = "Ignored";
+"status.conflict" = "Conflict";
+"status.type.changed" = "Type Changed";
+
+// MARK: - Diff View
+
+"diff.unified" = "Unified";
+"diff.side.by.side" = "Side by Side";
+"diff.no.changes" = "No changes to display";
+"diff.binary.file" = "Binary file";
+"diff.binary.message" = "Cannot display diff for binary files";
+"diff.additions" = "%d additions";
+"diff.deletions" = "%d deletions";
+"diff.line.added" = "Added line";
+"diff.line.removed" = "Removed line";
+"diff.line.unchanged" = "Unchanged line";
+"diff.change.of" = "Change %d of %d";
+"diff.next.change" = "Next Change";
+"diff.previous.change" = "Previous Change";
+
+// MARK: - Remote Operations
+
+"remote.fetch" = "Fetch";
+"remote.pull" = "Pull";
+"remote.push" = "Push";
+"remote.add" = "Add Remote";
+"remote.remove" = "Remove Remote";
+"remote.name" = "Remote Name";
+"remote.url" = "Remote URL";
+"remote.ahead" = "%d ahead";
+"remote.behind" = "%d behind";
+"remote.up.to.date" = "Up to date";
+
+// MARK: - Stash
+
+"stash.create" = "Create Stash";
+"stash.apply" = "Apply Stash";
+"stash.pop" = "Pop Stash";
+"stash.drop" = "Drop Stash";
+"stash.message.placeholder" = "Stash message (optional)";
+"stash.include.untracked" = "Include untracked files";
+"stash.empty" = "No Stashes";
+"stash.empty.message" = "Stash changes to save them for later";
+
+// MARK: - Tags
+
+"tag.create" = "Create Tag";
+"tag.delete" = "Delete Tag";
+"tag.name" = "Tag Name";
+"tag.message" = "Tag Message (optional)";
+"tag.push" = "Push Tag";
+"tag.push.all" = "Push All Tags";
+"tag.empty" = "No Tags";
+"tag.empty.message" = "Create tags to mark specific points in history";
+
+// MARK: - Merge
+
+"merge.title" = "Merge";
+"merge.strategy" = "Merge Strategy";
+"merge.strategy.merge" = "Merge commit";
+"merge.strategy.squash" = "Squash and merge";
+"merge.strategy.fast.forward" = "Fast-forward only";
+"merge.message" = "Merge Message";
+"merge.conflicts" = "Merge Conflicts";
+"merge.conflicts.message" = "Resolve conflicts before completing merge";
+"merge.abort" = "Abort Merge";
+"merge.continue" = "Continue Merge";
+
+// MARK: - Rebase
+
+"rebase.onto" = "Rebase onto";
+"rebase.conflicts" = "Rebase Conflicts";
+"rebase.abort" = "Abort Rebase";
+"rebase.continue" = "Continue Rebase";
+"rebase.skip" = "Skip Commit";
+
+// MARK: - Conflict Resolution
+
+"conflict.accept.current" = "Accept Current";
+"conflict.accept.incoming" = "Accept Incoming";
+"conflict.accept.both" = "Accept Both";
+"conflict.mark.resolved" = "Mark as Resolved";
+
+// MARK: - History
+
+"history.title" = "History";
+"history.search.placeholder" = "Search commits...";
+"history.no.commits" = "No commits yet";
+"history.load.more" = "Load More";
+"history.cherry.pick" = "Cherry-Pick";
+"history.revert" = "Revert";
+"history.reset" = "Reset to This Commit";
+"history.copy.hash" = "Copy Hash";
+"history.view.details" = "View Details";
+
+// MARK: - Reset
+
+"reset.title" = "Reset";
+"reset.mode.soft" = "Soft";
+"reset.mode.soft.description" = "Keep changes staged";
+"reset.mode.mixed" = "Mixed";
+"reset.mode.mixed.description" = "Keep changes unstaged";
+"reset.mode.hard" = "Hard";
+"reset.mode.hard.description" = "Discard all changes";
+"reset.warning" = "This action cannot be undone.";
+
+// MARK: - Gitignore
+
+"gitignore.title" = "Gitignore";
+"gitignore.add.pattern" = "Add Pattern";
+"gitignore.remove.pattern" = "Remove Pattern";
+"gitignore.templates" = "Templates";
+"gitignore.patterns" = "Patterns";
+"gitignore.ignored.files" = "Ignored Files";
+"gitignore.show.ignored" = "Show Ignored Files";
+
+// MARK: - Automation
+
+"automation.title" = "Automation";
+"automation.commit.prefixes" = "Commit Prefixes";
+"automation.script.hooks" = "Script Hooks";
+"automation.add.prefix" = "Add Prefix";
+"automation.add.hook" = "Add Hook";
+"automation.test.script" = "Test Script";
+"automation.hook.events" = "Hook Events";
+
+// MARK: - Submodules
+
+"submodule.title" = "Submodules";
+"submodule.add" = "Add Submodule";
+"submodule.update" = "Update Submodule";
+"submodule.update.all" = "Update All";
+"submodule.init" = "Initialize";
+"submodule.remove" = "Remove Submodule";
+"submodule.sync" = "Sync";
+
+// MARK: - Cleanup
+
+"cleanup.title" = "Cleanup";
+"cleanup.merged.branches" = "Merged Branches";
+"cleanup.stale.branches" = "Stale Branches";
+"cleanup.delete.selected" = "Delete Selected";
+"cleanup.days.old" = "%d days old";
+
+// MARK: - Errors
+
+"error.title" = "Error";
+"error.generic" = "An error occurred";
+"error.not.repository" = "Not a Git repository";
+"error.repository.not.open" = "No repository is open";
+"error.command.failed" = "Git command failed";
+"error.network" = "Network error";
+"error.conflict" = "Merge conflict detected";
+
+// MARK: - Loading
+
+"loading" = "Loading...";
+"loading.commits" = "Loading commits...";
+"loading.branches" = "Loading branches...";
+"loading.changes" = "Loading changes...";
+"loading.diff" = "Loading diff...";
+
+// MARK: - Accessibility
+
+"a11y.file.staged" = "%@ staged";
+"a11y.file.unstaged" = "%@ unstaged";
+"a11y.commit.success" = "Changes committed successfully";
+"a11y.push.success" = "Changes pushed to remote";
+"a11y.pull.success" = "Changes pulled from remote";
+"a11y.branch.switched" = "Switched to branch %@";
+"a11y.loading" = "Loading";
+"a11y.loading.complete" = "Loading complete";
+
+// MARK: - Keyboard Shortcuts
+
+"shortcut.category.repository" = "Repository";
+"shortcut.category.git" = "Git Operations";
+"shortcut.category.navigation" = "Navigation";
+"shortcut.category.editing" = "Editing";
+"shortcut.category.help" = "Help";
+
+"shortcut.open" = "Open Repository";
+"shortcut.close" = "Close Repository";
+"shortcut.refresh" = "Refresh";
+"shortcut.clone" = "Clone Repository";
+"shortcut.commit" = "Commit";
+"shortcut.push" = "Push";
+"shortcut.pull" = "Pull";
+"shortcut.fetch" = "Fetch";
+"shortcut.stage.all" = "Stage All";
+"shortcut.unstage.all" = "Unstage All";
+"shortcut.help" = "Show Help";
+"shortcut.shortcuts" = "Show Shortcuts";

@@ -20,6 +20,12 @@ struct HistoryTab: View {
     @State private var showFileDiffSheet: Bool = false
     @State private var selectedFileDiff: FileDiff?
 
+    // Pagination state
+    @State private var currentLimit: Int = 100
+    @State private var isLoadingMore: Bool = false
+    @State private var hasMoreCommits: Bool = true
+    private let pageSize: Int = 50
+
     // Advanced operations
     @State private var showResetDialog: Bool = false
     @State private var resetTargetCommit: Commit?
@@ -182,10 +188,10 @@ struct HistoryTab: View {
                         }
                     )
                 } else {
-                    // Simple List View
+                    // Simple List View with lazy loading
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(filteredCommits) { commit in
+                            ForEach(Array(filteredCommits.enumerated()), id: \.element.id) { index, commit in
                                 CommitRow(
                                     commit: commit,
                                     isSelected: selectedCommit?.id == commit.id
@@ -200,11 +206,45 @@ struct HistoryTab: View {
                                 .contextMenu {
                                     commitContextMenu(for: commit)
                                 }
+                                .onAppear {
+                                    // Trigger load more when near end
+                                    if index >= filteredCommits.count - 10 {
+                                        loadMoreCommits()
+                                    }
+                                }
 
                                 if commit.id != filteredCommits.last?.id {
                                     Divider()
                                         .padding(.leading, 50)
                                 }
+                            }
+
+                            // Load more indicator
+                            if isLoadingMore {
+                                HStack {
+                                    Spacer()
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Loading more commits...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .padding()
+                            } else if hasMoreCommits && !filteredCommits.isEmpty {
+                                Button {
+                                    loadMoreCommits()
+                                } label: {
+                                    HStack {
+                                        Spacer()
+                                        Text("Load More Commits")
+                                            .font(.caption)
+                                        Spacer()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.accentColor)
+                                .padding()
                             }
                         }
                     }
@@ -539,6 +579,28 @@ struct HistoryTab: View {
             commit.author.lowercased().contains(query) ||
             commit.hash.lowercased().contains(query) ||
             commit.shortHash.lowercased().contains(query)
+        }
+    }
+
+    // MARK: - Pagination
+
+    private func loadMoreCommits() {
+        guard !isLoadingMore && hasMoreCommits else { return }
+
+        isLoadingMore = true
+        let newLimit = currentLimit + pageSize
+
+        Task {
+            let previousCount = viewModel.commits.count
+            await viewModel.loadCommits(limit: newLimit)
+            let newCount = viewModel.commits.count
+
+            await MainActor.run {
+                currentLimit = newLimit
+                // If we got fewer new commits than requested, we've reached the end
+                hasMoreCommits = (newCount - previousCount) >= pageSize
+                isLoadingMore = false
+            }
         }
     }
 
