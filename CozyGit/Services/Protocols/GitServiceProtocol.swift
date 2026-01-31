@@ -117,6 +117,26 @@ protocol GitDiffServiceProtocol {
     func getDiffBetweenCommits(from: String, to: String) async throws -> Diff
 }
 
+// MARK: - Advanced Operations
+
+protocol GitAdvancedOperationsProtocol {
+    // Reset operations
+    func reset(to commit: String, mode: ResetMode) async throws -> ResetResult
+
+    // Cherry-pick operations
+    func cherryPick(commit: String) async throws -> CherryPickResult
+    func cherryPickContinue() async throws -> CherryPickResult
+    func cherryPickAbort() async throws
+
+    // Revert operations
+    func revert(commit: String) async throws -> RevertResult
+    func revertContinue() async throws -> RevertResult
+    func revertAbort() async throws
+
+    // Blame operations
+    func blame(file: String) async throws -> BlameInfo
+}
+
 // MARK: - Combined Protocol
 
 protocol GitServiceProtocol: GitRepositoryServiceProtocol,
@@ -126,6 +146,7 @@ protocol GitServiceProtocol: GitRepositoryServiceProtocol,
                               GitStashServiceProtocol,
                               GitTagServiceProtocol,
                               GitMergeRebaseServiceProtocol,
-                              GitDiffServiceProtocol {
+                              GitDiffServiceProtocol,
+                              GitAdvancedOperationsProtocol {
     var currentRepository: Repository? { get }
 }

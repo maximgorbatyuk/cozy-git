@@ -554,6 +554,82 @@ final class RepositoryViewModel {
         }
     }
 
+    // MARK: - Advanced Operations
+
+    // Reset
+
+    func reset(to commit: String, mode: ResetMode) async throws -> ResetResult {
+        let result = try await gitService.reset(to: commit, mode: mode)
+        if result.success {
+            await loadCommits()
+            await loadFileStatuses()
+            await loadBranches()
+        }
+        return result
+    }
+
+    // Cherry-Pick
+
+    func cherryPick(commit: String) async throws -> CherryPickResult {
+        let result = try await gitService.cherryPick(commit: commit)
+        if result.success {
+            await loadCommits()
+            await loadFileStatuses()
+        } else if result.hasConflicts {
+            await loadFileStatuses()
+        }
+        return result
+    }
+
+    func cherryPickContinue() async throws -> CherryPickResult {
+        let result = try await gitService.cherryPickContinue()
+        if result.success {
+            await loadCommits()
+        }
+        await loadFileStatuses()
+        return result
+    }
+
+    func cherryPickAbort() async throws {
+        try await gitService.cherryPickAbort()
+        await loadFileStatuses()
+        await loadCommits()
+    }
+
+    // Revert
+
+    func revert(commit: String) async throws -> RevertResult {
+        let result = try await gitService.revert(commit: commit)
+        if result.success {
+            await loadCommits()
+            await loadFileStatuses()
+        } else if result.hasConflicts {
+            await loadFileStatuses()
+        }
+        return result
+    }
+
+    func revertContinue() async throws -> RevertResult {
+        let result = try await gitService.revertContinue()
+        if result.success {
+            await loadCommits()
+        }
+        await loadFileStatuses()
+        return result
+    }
+
+    func revertAbort() async throws {
+        try await gitService.revertAbort()
+        await loadFileStatuses()
+        await loadCommits()
+    }
+
+    // Blame
+
+    func blame(file: String) async throws -> BlameInfo {
+        try await gitService.blame(file: file)
+    }
+
     // MARK: - Error Handling
 
     private func handleError(_ error: Error) {

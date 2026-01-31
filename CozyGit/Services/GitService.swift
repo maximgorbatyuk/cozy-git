@@ -1998,4 +1998,285 @@ final class GitService: GitServiceProtocol {
             lines: diffLines
         )
     }
+
+    // MARK: - Advanced Operations
+
+    // MARK: Reset
+
+    func reset(to commit: String, mode: ResetMode) async throws -> ResetResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["reset", "--\(mode.rawValue)", commit],
+            workingDirectory: repo.path
+        )
+
+        if result.success {
+            return ResetResult(success: true, targetCommit: commit, mode: mode)
+        } else {
+            return ResetResult(
+                success: false,
+                targetCommit: commit,
+                mode: mode,
+                errorMessage: result.error ?? "Reset failed"
+            )
+        }
+    }
+
+    // MARK: Cherry-Pick
+
+    func cherryPick(commit: String) async throws -> CherryPickResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["cherry-pick", commit],
+            workingDirectory: repo.path
+        )
+
+        if result.success {
+            // Get the new commit hash
+            let headResult = await shellExecutor.executeGit(
+                arguments: ["rev-parse", "HEAD"],
+                workingDirectory: repo.path
+            )
+            let newHash = headResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .success(commitHash: newHash.isEmpty ? commit : newHash)
+        } else {
+            // Check if there are conflicts
+            let output = result.output
+            let errorOutput = result.error ?? ""
+
+            if output.contains("CONFLICT") || errorOutput.contains("CONFLICT") ||
+               output.contains("could not apply") || errorOutput.contains("could not apply") {
+                return .conflict()
+            }
+
+            return .failure(result.error ?? "Cherry-pick failed")
+        }
+    }
+
+    func cherryPickContinue() async throws -> CherryPickResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["cherry-pick", "--continue"],
+            workingDirectory: repo.path
+        )
+
+        if result.success {
+            let headResult = await shellExecutor.executeGit(
+                arguments: ["rev-parse", "HEAD"],
+                workingDirectory: repo.path
+            )
+            let newHash = headResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .success(commitHash: newHash)
+        } else {
+            let output = result.output
+            let errorOutput = result.error ?? ""
+
+            if output.contains("CONFLICT") || errorOutput.contains("CONFLICT") {
+                return .conflict()
+            }
+
+            return .failure(result.error ?? "Cherry-pick continue failed")
+        }
+    }
+
+    func cherryPickAbort() async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["cherry-pick", "--abort"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to abort cherry-pick")
+        }
+    }
+
+    // MARK: Revert
+
+    func revert(commit: String) async throws -> RevertResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["revert", "--no-edit", commit],
+            workingDirectory: repo.path
+        )
+
+        if result.success {
+            // Get the new revert commit hash
+            let headResult = await shellExecutor.executeGit(
+                arguments: ["rev-parse", "HEAD"],
+                workingDirectory: repo.path
+            )
+            let newHash = headResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .success(revertCommitHash: newHash)
+        } else {
+            // Check if there are conflicts
+            let output = result.output
+            let errorOutput = result.error ?? ""
+
+            if output.contains("CONFLICT") || errorOutput.contains("CONFLICT") ||
+               output.contains("could not revert") || errorOutput.contains("could not revert") {
+                return .conflict()
+            }
+
+            return .failure(result.error ?? "Revert failed")
+        }
+    }
+
+    func revertContinue() async throws -> RevertResult {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["revert", "--continue"],
+            workingDirectory: repo.path
+        )
+
+        if result.success {
+            let headResult = await shellExecutor.executeGit(
+                arguments: ["rev-parse", "HEAD"],
+                workingDirectory: repo.path
+            )
+            let newHash = headResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .success(revertCommitHash: newHash)
+        } else {
+            let output = result.output
+            let errorOutput = result.error ?? ""
+
+            if output.contains("CONFLICT") || errorOutput.contains("CONFLICT") {
+                return .conflict()
+            }
+
+            return .failure(result.error ?? "Revert continue failed")
+        }
+    }
+
+    func revertAbort() async throws {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await shellExecutor.executeGit(
+            arguments: ["revert", "--abort"],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to abort revert")
+        }
+    }
+
+    // MARK: Blame
+
+    func blame(file: String) async throws -> BlameInfo {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        // Use git blame with porcelain format for easier parsing
+        let result = await shellExecutor.executeGit(
+            arguments: ["blame", "--porcelain", file],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Blame failed")
+        }
+
+        return parseBlameOutput(result.output, filePath: file)
+    }
+
+    private func parseBlameOutput(_ output: String, filePath: String) -> BlameInfo {
+        var lines: [BlameLine] = []
+        var commits: [String: Commit] = [:]
+
+        let outputLines = output.components(separatedBy: "\n")
+        var lineIndex = 0
+        var currentLineNumber = 0
+
+        // Temporary storage for current blame entry
+        var currentHash = ""
+        var currentAuthor = ""
+        var currentAuthorEmail = ""
+        var currentAuthorTime: Date = Date()
+        var isOriginal = false
+
+        while lineIndex < outputLines.count {
+            let line = outputLines[lineIndex]
+
+            if line.isEmpty {
+                lineIndex += 1
+                continue
+            }
+
+            // Check if this is a commit hash line (40 hex chars + line numbers)
+            if line.count >= 40 && line.prefix(40).allSatisfy({ $0.isHexDigit }) {
+                let parts = line.split(separator: " ")
+                if parts.count >= 3 {
+                    currentHash = String(parts[0])
+                    currentLineNumber = Int(parts[2]) ?? 0
+                    // Check if this line is original to this commit
+                    isOriginal = parts.count >= 4 && parts[1] == parts[2]
+                }
+                lineIndex += 1
+                continue
+            }
+
+            // Parse blame headers
+            if line.hasPrefix("author ") {
+                currentAuthor = String(line.dropFirst(7))
+            } else if line.hasPrefix("author-mail ") {
+                let email = String(line.dropFirst(12))
+                currentAuthorEmail = email.trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+            } else if line.hasPrefix("author-time ") {
+                if let timestamp = TimeInterval(String(line.dropFirst(12))) {
+                    currentAuthorTime = Date(timeIntervalSince1970: timestamp)
+                }
+            } else if line.hasPrefix("\t") {
+                // This is the actual line content
+                let content = String(line.dropFirst(1))
+
+                let blameLine = BlameLine(
+                    lineNumber: currentLineNumber,
+                    commitHash: currentHash,
+                    author: currentAuthor,
+                    authorEmail: currentAuthorEmail,
+                    date: currentAuthorTime,
+                    content: content,
+                    isOriginal: isOriginal
+                )
+                lines.append(blameLine)
+
+                // Store commit info if not already stored
+                if commits[currentHash] == nil {
+                    commits[currentHash] = Commit(
+                        hash: currentHash,
+                        message: "",
+                        author: currentAuthor,
+                        authorEmail: currentAuthorEmail,
+                        date: currentAuthorTime
+                    )
+                }
+            }
+
+            lineIndex += 1
+        }
+
+        return BlameInfo(filePath: filePath, lines: lines, commits: commits)
+    }
 }

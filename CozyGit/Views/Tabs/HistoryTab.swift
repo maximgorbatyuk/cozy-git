@@ -20,6 +20,20 @@ struct HistoryTab: View {
     @State private var showFileDiffSheet: Bool = false
     @State private var selectedFileDiff: FileDiff?
 
+    // Advanced operations
+    @State private var showResetDialog: Bool = false
+    @State private var resetTargetCommit: Commit?
+    @State private var showCherryPickConfirmation: Bool = false
+    @State private var cherryPickTargetCommit: Commit?
+    @State private var showRevertConfirmation: Bool = false
+    @State private var revertTargetCommit: Commit?
+    @State private var operationError: String?
+    @State private var showOperationError: Bool = false
+    @State private var operationSuccess: String?
+    @State private var showOperationSuccess: Bool = false
+    @State private var showBlameSheet: Bool = false
+    @State private var blameFilePath: String?
+
     var body: some View {
         if viewModel.repository != nil {
             historyContent
@@ -39,6 +53,56 @@ struct HistoryTab: View {
                 .sheet(isPresented: $showFileDiffSheet) {
                     if let fileDiff = selectedFileDiff {
                         FileDiffSheet(fileDiff: fileDiff, commitHash: selectedCommit?.shortHash)
+                    }
+                }
+                .sheet(isPresented: $showResetDialog) {
+                    if let commit = resetTargetCommit {
+                        ResetDialog(commit: commit) { mode in
+                            await performReset(to: commit, mode: mode)
+                        }
+                    }
+                }
+                .confirmationDialog(
+                    "Cherry-Pick Commit",
+                    isPresented: $showCherryPickConfirmation,
+                    presenting: cherryPickTargetCommit
+                ) { commit in
+                    Button("Cherry-Pick") {
+                        Task {
+                            await performCherryPick(commit: commit)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: { commit in
+                    Text("Apply changes from commit \(commit.shortHash) onto the current branch?")
+                }
+                .confirmationDialog(
+                    "Revert Commit",
+                    isPresented: $showRevertConfirmation,
+                    presenting: revertTargetCommit
+                ) { commit in
+                    Button("Revert", role: .destructive) {
+                        Task {
+                            await performRevert(commit: commit)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: { commit in
+                    Text("Create a new commit that undoes the changes from \(commit.shortHash)?")
+                }
+                .alert("Operation Failed", isPresented: $showOperationError) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(operationError ?? "Unknown error occurred")
+                }
+                .alert("Success", isPresented: $showOperationSuccess) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(operationSuccess ?? "Operation completed successfully")
+                }
+                .sheet(isPresented: $showBlameSheet) {
+                    if let path = blameFilePath {
+                        BlameSheet(filePath: path, viewModel: viewModel)
                     }
                 }
         } else {
@@ -132,6 +196,9 @@ struct HistoryTab: View {
                                 .onTapGesture(count: 2) {
                                     selectedCommit = commit
                                     showCommitDetail = true
+                                }
+                                .contextMenu {
+                                    commitContextMenu(for: commit)
                                 }
 
                                 if commit.id != filteredCommits.last?.id {
@@ -251,6 +318,32 @@ struct HistoryTab: View {
                         .onTapGesture(count: 2) {
                             selectedFileDiff = file
                             showFileDiffSheet = true
+                        }
+                        .contextMenu {
+                            Button {
+                                selectedFileDiff = file
+                                showFileDiffSheet = true
+                            } label: {
+                                Label("View Diff", systemImage: "doc.text")
+                            }
+
+                            if !file.isDeletedFile {
+                                Button {
+                                    blameFilePath = file.newPath
+                                    showBlameSheet = true
+                                } label: {
+                                    Label("Blame", systemImage: "text.alignleft")
+                                }
+                            }
+
+                            Divider()
+
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(file.newPath, forType: .string)
+                            } label: {
+                                Label("Copy Path", systemImage: "doc.on.doc")
+                            }
                         }
                     }
                 }
@@ -457,6 +550,106 @@ struct HistoryTab: View {
             title: "No Repository Open",
             message: "Open a repository to view commit history"
         )
+    }
+
+    // MARK: - Commit Context Menu
+
+    @ViewBuilder
+    private func commitContextMenu(for commit: Commit) -> some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(commit.hash, forType: .string)
+        } label: {
+            Label("Copy Hash", systemImage: "doc.on.doc")
+        }
+
+        Button {
+            selectedCommit = commit
+            showCommitDetail = true
+        } label: {
+            Label("View Details", systemImage: "info.circle")
+        }
+
+        Divider()
+
+        Button {
+            cherryPickTargetCommit = commit
+            showCherryPickConfirmation = true
+        } label: {
+            Label("Cherry-Pick...", systemImage: "leaf.arrow.triangle.circlepath")
+        }
+
+        Button {
+            revertTargetCommit = commit
+            showRevertConfirmation = true
+        } label: {
+            Label("Revert...", systemImage: "arrow.uturn.backward")
+        }
+
+        Divider()
+
+        Button {
+            resetTargetCommit = commit
+            showResetDialog = true
+        } label: {
+            Label("Reset to This Commit...", systemImage: "arrow.counterclockwise")
+        }
+    }
+
+    // MARK: - Advanced Operations
+
+    private func performReset(to commit: Commit, mode: ResetMode) async {
+        do {
+            let result = try await viewModel.reset(to: commit.hash, mode: mode)
+            if result.success {
+                operationSuccess = "Reset to \(commit.shortHash) (\(mode.displayName)) completed"
+                showOperationSuccess = true
+            } else if let error = result.errorMessage {
+                operationError = error
+                showOperationError = true
+            }
+        } catch {
+            operationError = error.localizedDescription
+            showOperationError = true
+        }
+    }
+
+    private func performCherryPick(commit: Commit) async {
+        do {
+            let result = try await viewModel.cherryPick(commit: commit.hash)
+            if result.success {
+                operationSuccess = "Cherry-picked \(commit.shortHash) successfully"
+                showOperationSuccess = true
+            } else if result.hasConflicts {
+                operationError = "Cherry-pick resulted in conflicts. Please resolve them and continue."
+                showOperationError = true
+            } else if let error = result.errorMessage {
+                operationError = error
+                showOperationError = true
+            }
+        } catch {
+            operationError = error.localizedDescription
+            showOperationError = true
+        }
+    }
+
+    private func performRevert(commit: Commit) async {
+        do {
+            let result = try await viewModel.revert(commit: commit.hash)
+            if result.success {
+                operationSuccess = "Reverted \(commit.shortHash) successfully"
+                showOperationSuccess = true
+            } else if result.hasConflicts {
+                operationError = "Revert resulted in conflicts. Please resolve them and continue."
+                showOperationError = true
+            } else if let error = result.errorMessage {
+                operationError = error
+                showOperationError = true
+            }
+        } catch {
+            operationError = error.localizedDescription
+            showOperationError = true
+        }
     }
 }
 

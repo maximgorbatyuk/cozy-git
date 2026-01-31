@@ -1419,7 +1419,7 @@ protocol GitService: GitRepositoryService,
 | 11 | Stash Operations | Week 13 | ✅ | Phase 10 |
 | 12 | Tag Operations | Week 14 | ✅ | Phase 11 |
 | 13 | Remote Management | Week 15 | ✅ | Phase 12 |
-| 14 | Advanced Git Operations | Week 16 | ⬜ | Phase 13 |
+| 14 | Advanced Git Operations | Week 16 | ✅ | Phase 13 |
 | 15 | Submodule Support | Week 17 | ⬜ | Phase 14 |
 | 16 | Ignore File Management | Week 18 | ⬜ | Phase 15 |
 | 17 | Automation System (CGF-2) | Week 19-20 | ⬜ | Phase 16 |
@@ -2452,12 +2452,33 @@ protocol GitService: GitRepositoryService,
 - Update History tab after operations
 
 **Completion Criteria**:
-- [ ] Reset works in all modes
-- [ ] Cherry-pick works correctly
-- [ ] Revert creates proper commits
-- [ ] Blame displays accurately
-- [ ] All destructive actions have warnings
-- [ ] UI is clear about operations
+- [x] Reset works in all modes
+- [x] Cherry-pick works correctly
+- [x] Revert creates proper commits
+- [x] Blame displays accurately
+- [x] All destructive actions have warnings
+- [x] UI is clear about operations
+
+**Implementation Notes (Phase 14 - DONE)**:
+- Created `AdvancedGitModels.swift` with ResetMode, ResetResult, CherryPickResult, RevertResult, BlameLine, BlameInfo
+- Added `GitAdvancedOperationsProtocol` to GitServiceProtocol.swift with reset, cherry-pick, revert, blame methods
+- Implemented all advanced operations in GitService.swift (reset, cherryPick, cherryPickContinue, cherryPickAbort, revert, revertContinue, revertAbort, blame)
+- Added ViewModel methods for all advanced operations
+- Created `ResetDialog.swift` with mode selection (soft/mixed/hard) and destructive warning
+- Created `BlameView.swift` and `BlameSheet.swift` for file blame visualization with age coloring
+- Added commit context menu in HistoryTab with Cherry-Pick, Revert, and Reset options
+- Added file context menu in HistoryTab with View Diff, Blame, and Copy Path options
+
+**Files Created**:
+- `Models/AdvancedGitModels.swift` - Reset, CherryPick, Revert, Blame models
+- `Views/Dialogs/ResetDialog.swift` - Reset dialog with mode selection
+- `Views/Components/BlameView.swift` - Blame view with author colors and age indicators
+
+**Files Modified**:
+- `Services/Protocols/GitServiceProtocol.swift` - Added GitAdvancedOperationsProtocol
+- `Services/GitService.swift` - Implemented all advanced operations
+- `ViewModels/RepositoryViewModel.swift` - Added ViewModel methods
+- `Views/Tabs/HistoryTab.swift` - Added context menus and dialogs for operations
 
 ---
 
@@ -3069,7 +3090,7 @@ protocol GitService: GitRepositoryService,
 | 11 | Week 13 | Stash operations | Phase 10 | ✅ |
 | 12 | Week 14 | Tag operations | Phase 11 | ✅ |
 | 13 | Week 15 | Remote management | Phase 12 | ✅ |
-| 14 | Week 16 | Advanced Git ops | Phase 13 | ⬜ |
+| 14 | Week 16 | Advanced Git ops | Phase 13 | ✅ |
 | 15 | Week 17 | Submodule support | Phase 14 | ⬜ |
 | 16 | Week 18 | .gitignore management | Phase 15 | ⬜ |
 | 17 | Week 19-20 | Automation, CGF-2 | Phase 16 | ⬜ |
