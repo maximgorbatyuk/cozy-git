@@ -1111,37 +1111,56 @@ final class GitService: GitServiceProtocol {
     private func parseStatusOutput(_ output: String) -> [FileStatus] {
         guard !output.isEmpty else { return [] }
 
-        return output.components(separatedBy: .newlines).compactMap { line -> FileStatus? in
-            guard line.count >= 3 else { return nil }
+        var results: [FileStatus] = []
+
+        for line in output.components(separatedBy: .newlines) {
+            guard line.count >= 3 else { continue }
 
             let index = line.index(line.startIndex, offsetBy: 2)
             let statusChars = String(line[..<index])
             let path = String(line[line.index(after: index)...]).trimmingCharacters(in: .whitespaces)
 
+            guard !path.isEmpty else { continue }
+
             let indexStatus = statusChars.first ?? " "
             let workTreeStatus = statusChars.last ?? " "
+            let isConflicted = statusChars.contains("U")
 
-            let status: FileChangeType
-            let isStaged: Bool
-
+            // Handle untracked files
             if indexStatus == "?" {
-                status = .untracked
-                isStaged = false
-            } else if indexStatus != " " {
-                status = FileChangeType(rawValue: String(indexStatus)) ?? .modified
-                isStaged = true
-            } else {
-                status = FileChangeType(rawValue: String(workTreeStatus)) ?? .modified
-                isStaged = false
+                results.append(FileStatus(
+                    path: path,
+                    status: .untracked,
+                    isStaged: false,
+                    isConflicted: false
+                ))
+                continue
             }
 
-            return FileStatus(
-                path: path,
-                status: status,
-                isStaged: isStaged,
-                isConflicted: statusChars.contains("U")
-            )
+            // Create staged entry if there are staged changes
+            if indexStatus != " " {
+                let stagedStatus = FileChangeType(rawValue: String(indexStatus)) ?? .modified
+                results.append(FileStatus(
+                    path: path,
+                    status: stagedStatus,
+                    isStaged: true,
+                    isConflicted: isConflicted
+                ))
+            }
+
+            // Create unstaged entry if there are unstaged changes
+            if workTreeStatus != " " {
+                let unstagedStatus = FileChangeType(rawValue: String(workTreeStatus)) ?? .modified
+                results.append(FileStatus(
+                    path: path,
+                    status: unstagedStatus,
+                    isStaged: false,
+                    isConflicted: isConflicted
+                ))
+            }
         }
+
+        return results
     }
 
     private func parseBranchOutput(_ output: String) -> [Branch] {
@@ -1746,8 +1765,91 @@ final class GitService: GitServiceProtocol {
     }
 
     func getDiffForFile(path: String, staged: Bool = false) async throws -> FileDiff? {
+        guard let repo = currentRepository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        // First try the normal diff
         let options = DiffOptions(staged: staged, filePath: path)
         let diff = try await getDiff(options: options)
+
+        // If we got a valid diff with content, return it
+        if let fileDiff = diff.files.first {
+            // Return if we have hunks, or if it's marked as binary, or if it has paths set
+            if !fileDiff.hunks.isEmpty || fileDiff.isBinary || !fileDiff.newPath.isEmpty {
+                return fileDiff
+            }
+        }
+
+        // If no diff found, check if it's an untracked file
+        // For untracked files, git diff returns nothing - we need to show the entire file as new
+        let fullPath = repo.path.appendingPathComponent(path)
+        if FileManager.default.fileExists(atPath: fullPath.path) {
+            // Check if the file is untracked (not yet tracked by git)
+            let statusResult = await shellExecutor.executeGit(
+                arguments: ["status", "--porcelain", "--", path],
+                workingDirectory: repo.path
+            )
+
+            let statusOutput = statusResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isUntracked = statusOutput.hasPrefix("??")
+            let isNewlyAdded = statusOutput.hasPrefix("A ") || statusOutput.hasPrefix(" A")
+
+            // For untracked files, or newly added files when viewing staged diff
+            if isUntracked || (isNewlyAdded && staged) {
+                // Read the file content and create a diff showing all lines as additions
+                do {
+                    let content = try String(contentsOf: fullPath, encoding: .utf8)
+                    let lines = content.components(separatedBy: .newlines)
+
+                    // Create diff lines (all additions)
+                    var diffLines: [DiffLine] = []
+                    for (index, line) in lines.enumerated() {
+                        // Skip empty last line that results from trailing newline
+                        if index == lines.count - 1 && line.isEmpty {
+                            continue
+                        }
+                        diffLines.append(DiffLine(
+                            type: .addition,
+                            content: line,
+                            oldLineNumber: nil,
+                            newLineNumber: index + 1
+                        ))
+                    }
+
+                    // Create a hunk with all the additions
+                    let hunk = DiffHunk(
+                        oldStart: 0,
+                        oldCount: 0,
+                        newStart: 1,
+                        newCount: diffLines.count,
+                        header: "@@ -0,0 +1,\(diffLines.count) @@",
+                        lines: diffLines
+                    )
+
+                    return FileDiff(
+                        oldPath: "/dev/null",
+                        newPath: path,
+                        hunks: [hunk],
+                        isBinary: false,
+                        isNewFile: true,
+                        isDeletedFile: false
+                    )
+                } catch {
+                    // If we can't read the file, it might be binary
+                    return FileDiff(
+                        oldPath: "/dev/null",
+                        newPath: path,
+                        hunks: [],
+                        isBinary: true,
+                        isNewFile: true,
+                        isDeletedFile: false
+                    )
+                }
+            }
+        }
+
+        // Return whatever we got from the original diff (might be nil if no changes)
         return diff.files.first
     }
 

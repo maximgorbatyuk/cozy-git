@@ -6,7 +6,7 @@
 import Foundation
 
 struct FileStatus: Identifiable, Codable, Hashable {
-    var id: String { path }
+    var id: String { "\(path):\(isStaged ? "staged" : "unstaged")" }
     let path: String
     let oldPath: String?
     let status: FileChangeType

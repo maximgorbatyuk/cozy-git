@@ -514,9 +514,10 @@ struct SideBySideDiffView: View {
                         .font(.caption)
                         .fontWeight(.medium)
                         .foregroundColor(.secondary)
-                        .frame(width: geometry.size.width * dividerPosition - 2)
-                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
                         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                        .frame(width: geometry.size.width * dividerPosition - 2)
 
                     Rectangle()
                         .fill(Color(nsColor: .separatorColor))
@@ -526,33 +527,41 @@ struct SideBySideDiffView: View {
                         .font(.caption)
                         .fontWeight(.medium)
                         .foregroundColor(.secondary)
-                        .frame(width: geometry.size.width * (1 - dividerPosition) - 2)
-                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
                         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                        .frame(width: geometry.size.width * (1 - dividerPosition) - 2)
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
                 Divider()
 
                 // Synchronized scroll content - single ScrollView for both panels
                 ScrollView([.vertical, .horizontal]) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(alignedLines) { alignedLine in
-                            HStack(spacing: 0) {
-                                // Left panel line
-                                leftLineView(alignedLine)
-                                    .frame(width: geometry.size.width * dividerPosition - 2)
+                    VStack(spacing: 0) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(alignedLines) { alignedLine in
+                                HStack(spacing: 0) {
+                                    // Left panel line
+                                    leftLineView(alignedLine)
+                                        .frame(width: geometry.size.width * dividerPosition - 2)
 
-                                // Divider
-                                Rectangle()
-                                    .fill(Color(nsColor: .separatorColor))
-                                    .frame(width: 4)
+                                    // Divider
+                                    Rectangle()
+                                        .fill(Color(nsColor: .separatorColor))
+                                        .frame(width: 4)
 
-                                // Right panel line
-                                rightLineView(alignedLine)
-                                    .frame(width: geometry.size.width * (1 - dividerPosition) - 2)
+                                    // Right panel line
+                                    rightLineView(alignedLine)
+                                        .frame(width: geometry.size.width * (1 - dividerPosition) - 2)
+                                }
                             }
                         }
+                        .frame(minWidth: geometry.size.width)
+
+                        Spacer(minLength: 0)
                     }
+                    .frame(minHeight: geometry.size.height - 34)
                 }
             }
         }

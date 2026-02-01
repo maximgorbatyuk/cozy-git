@@ -14,6 +14,12 @@ struct ChangesTab: View {
     @State private var currentDiff: FileDiff?
     @State private var isLoadingDiff = false
 
+    // Commit section state
+    @State private var commitMessage: String = ""
+    @State private var isCommitting: Bool = false
+    @State private var isCommittingAndPushing: Bool = false
+    @State private var amendCommit: Bool = false
+
     var body: some View {
         if viewModel.repository != nil {
             changesContent
@@ -73,13 +79,18 @@ struct ChangesTab: View {
 
                 Divider()
 
+                // Unstaged Files Section
+                unstagedFilesSection
+
+                Divider()
+
                 // Staged Files Section
                 stagedFilesSection
 
                 Divider()
 
-                // Unstaged Files Section
-                unstagedFilesSection
+                // Commit Section
+                commitSection
             }
             .frame(minWidth: 280, maxWidth: 400)
 
@@ -192,15 +203,6 @@ struct ChangesTab: View {
                             .font(.caption)
                     }
                     .buttonStyle(.borderless)
-
-                    Button {
-                        showCommitDialog = true
-                    } label: {
-                        Label("Commit", systemImage: "checkmark.circle")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
                 }
             }
             .padding(.horizontal, 12)
@@ -385,6 +387,118 @@ struct ChangesTab: View {
                 }
             }
         }
+    }
+
+    // MARK: - Commit Section
+
+    private var commitSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("Commit")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            // Content
+            VStack(spacing: 12) {
+                // Commit message field
+                TextField("Commit message...", text: $commitMessage, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(3...6)
+
+                // Amend checkbox
+                Toggle("Amend last commit", isOn: $amendCommit)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+
+                // Buttons
+                HStack(spacing: 8) {
+                    Button {
+                        Task {
+                            await performCommit()
+                        }
+                    } label: {
+                        if isCommitting {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Commit")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isCommitDisabled)
+
+                    Button {
+                        Task {
+                            await performCommitAndPush()
+                        }
+                    } label: {
+                        if isCommittingAndPushing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Commit & Push")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isCommitDisabled)
+                }
+
+                // Helper text
+                if viewModel.stagedFiles.isEmpty && !amendCommit {
+                    Text("Stage changes to commit")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    private var isCommitDisabled: Bool {
+        let messageEmpty = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let noStagedChanges = viewModel.stagedFiles.isEmpty
+        let isOperationInProgress = isCommitting || isCommittingAndPushing
+
+        // When amending, we can commit even without staged changes (just to change the message)
+        if amendCommit {
+            return messageEmpty || isOperationInProgress
+        }
+
+        return messageEmpty || noStagedChanges || isOperationInProgress
+    }
+
+    private func performCommit() async {
+        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        guard amendCommit || !viewModel.stagedFiles.isEmpty else { return }
+
+        isCommitting = true
+        await viewModel.commit(message: message, amend: amendCommit)
+        isCommitting = false
+        commitMessage = ""
+        amendCommit = false
+    }
+
+    private func performCommitAndPush() async {
+        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        guard amendCommit || !viewModel.stagedFiles.isEmpty else { return }
+
+        isCommittingAndPushing = true
+        await viewModel.commit(message: message, amend: amendCommit)
+        await viewModel.push(force: amendCommit) // Force push if amending
+        isCommittingAndPushing = false
+        commitMessage = ""
+        amendCommit = false
     }
 
     // MARK: - No Repository View
