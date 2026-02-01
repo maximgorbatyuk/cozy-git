@@ -135,13 +135,140 @@ struct OverviewTab: View {
     // MARK: - No Repository View
 
     private var noRepositoryView: some View {
-        EmptyStateView(
-            icon: "folder.badge.questionmark",
-            title: "No Repository Open",
-            message: "Open a Git repository to get started",
-            actionTitle: "Open Repository"
-        ) {
-            DependencyContainer.shared.mainViewModel.showOpenDialog()
+        ScrollView {
+            VStack(spacing: 24) {
+                // Welcome header
+                VStack(spacing: 12) {
+                    Image(systemName: "folder.badge.questionmark")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary)
+
+                    Text("No Repository Open")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    Text("Open a Git repository to get started")
+                        .foregroundColor(.secondary)
+
+                    Button {
+                        DependencyContainer.shared.mainViewModel.showOpenDialog()
+                    } label: {
+                        Label("Open Repository", systemImage: "folder")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
+                .padding(.top, 40)
+
+                // Recent repositories
+                recentRepositoriesSection
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+        }
+    }
+
+    // MARK: - Recent Repositories Section
+
+    private var recentRepositoriesSection: some View {
+        let recentRepos = DependencyContainer.shared.mainViewModel.recentRepositories
+
+        return Group {
+            if !recentRepos.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Recent Repositories")
+                            .font(.headline)
+
+                        Spacer()
+
+                        Button {
+                            DependencyContainer.shared.mainViewModel.clearRecentRepositories()
+                        } label: {
+                            Text("Clear")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+                    }
+
+                    VStack(spacing: 0) {
+                        ForEach(recentRepos) { repo in
+                            RecentRepositoryRow(
+                                repository: repo,
+                                onOpen: {
+                                    Task {
+                                        await DependencyContainer.shared.mainViewModel.openRepository(at: repo.path)
+                                    }
+                                },
+                                onRemove: {
+                                    DependencyContainer.shared.mainViewModel.removeFromRecent(repo)
+                                }
+                            )
+
+                            if repo.id != recentRepos.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .frame(maxWidth: 500)
+            }
+        }
+    }
+}
+
+// MARK: - Recent Repository Row
+
+private struct RecentRepositoryRow: View {
+    let repository: Repository
+    let onOpen: () -> Void
+    let onRemove: () -> Void
+
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "folder.fill")
+                .font(.title2)
+                .foregroundColor(.accentColor)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(repository.name)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+
+                Text(repository.path.path)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            if isHovered {
+                Button {
+                    onRemove()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Remove from recent")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .background(isHovered ? Color.accentColor.opacity(0.1) : Color.clear)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .onTapGesture {
+            onOpen()
         }
     }
 }

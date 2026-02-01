@@ -62,11 +62,40 @@ final class MainViewModel {
     private let gitService: GitService
     private let logger = Logger.shared
 
+    // MARK: - UserDefaults Keys
+
+    private static let recentRepositoriesKey = "recentRepositories"
+
     // MARK: - Initialization
 
     init(gitService: GitService) {
         self.gitService = gitService
+        self.recentRepositories = Self.loadRecentRepositories()
         logger.info("MainViewModel initialized", category: .app)
+    }
+
+    // MARK: - Persistence
+
+    private static func loadRecentRepositories() -> [Repository] {
+        guard let data = UserDefaults.standard.data(forKey: recentRepositoriesKey) else {
+            return []
+        }
+        do {
+            let repositories = try JSONDecoder().decode([Repository].self, from: data)
+            // Filter out repositories that no longer exist
+            return repositories.filter { FileManager.default.fileExists(atPath: $0.path.path) }
+        } catch {
+            return []
+        }
+    }
+
+    private func saveRecentRepositories() {
+        do {
+            let data = try JSONEncoder().encode(recentRepositories)
+            UserDefaults.standard.set(data, forKey: Self.recentRepositoriesKey)
+        } catch {
+            logger.error("Failed to save recent repositories: \(error)", category: .app)
+        }
     }
 
     // MARK: - Repository Management
@@ -130,12 +159,26 @@ final class MainViewModel {
     }
 
     private func addToRecent(_ repository: Repository) {
-        if !recentRepositories.contains(where: { $0.path == repository.path }) {
-            recentRepositories.insert(repository, at: 0)
-            if recentRepositories.count > 10 {
-                recentRepositories.removeLast()
-            }
+        // Remove existing entry if present (to move it to the top)
+        recentRepositories.removeAll { $0.path == repository.path }
+        // Insert at the beginning
+        recentRepositories.insert(repository, at: 0)
+        // Keep only the last 10
+        if recentRepositories.count > 10 {
+            recentRepositories.removeLast()
         }
+        // Persist to UserDefaults
+        saveRecentRepositories()
+    }
+
+    func removeFromRecent(_ repository: Repository) {
+        recentRepositories.removeAll { $0.path == repository.path }
+        saveRecentRepositories()
+    }
+
+    func clearRecentRepositories() {
+        recentRepositories.removeAll()
+        saveRecentRepositories()
     }
 
     // MARK: - File Dialog
