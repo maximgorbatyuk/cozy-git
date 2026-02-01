@@ -167,8 +167,10 @@ final class GitService: GitServiceProtocol {
             throw GitError.repositoryNotOpen
         }
 
+        var args = ["checkout", name]
+
         let result = await shellExecutor.executeGit(
-            arguments: ["checkout", name],
+            arguments: args,
             workingDirectory: repo.path
         )
 

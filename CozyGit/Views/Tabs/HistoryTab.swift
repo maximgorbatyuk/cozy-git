@@ -45,6 +45,11 @@ struct HistoryTab: View {
     @State private var isPulling: Bool = false
     @State private var isPushing: Bool = false
 
+    // Branch context menu operations
+    @State private var showDeleteBranchConfirmation: Bool = false
+    @State private var branchToDelete: String?
+    @State private var isPushingBranch: Bool = false
+
     // Remote operation result states
     enum OperationResult { case none, success, failure }
     @State private var fetchResult: OperationResult = .none
@@ -121,6 +126,22 @@ struct HistoryTab: View {
                     if let path = blameFilePath {
                         BlameSheet(filePath: path, viewModel: viewModel)
                     }
+                }
+                .confirmationDialog(
+                    "Delete Branch",
+                    isPresented: $showDeleteBranchConfirmation,
+                    presenting: branchToDelete
+                ) { branchName in
+                    Button("Delete", role: .destructive) {
+                        Task {
+                            await deleteBranch(branchName)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {
+                        branchToDelete = nil
+                    }
+                } message: { branchName in
+                    Text("Are you sure you want to delete the branch '\(branchName)'? This action cannot be undone.")
                 }
         } else {
             noRepositoryView
@@ -246,14 +267,36 @@ struct HistoryTab: View {
                         commits: filteredCommits,
                         selectedCommit: $selectedCommit,
                         onDoubleClick: { commit in
-                            showCommitDetail = true
+                            Task {
+                                await smartCheckout(for: commit)
+                            }
                         },
                         currentBranch: viewModel.repository?.currentBranch,
                         onBranchClick: { branchName, remoteRef in
                             Task {
                                 await checkoutBranch(branchName, remoteRef: remoteRef)
                             }
-                        }
+                        },
+                        onSwitchToBranch: { branchName in
+                            Task {
+                                await switchToBranch(branchName)
+                            }
+                        },
+                        onDeleteBranch: { branchName in
+                            branchToDelete = branchName
+                            showDeleteBranchConfirmation = true
+                        },
+                        onPushBranch: { branchName in
+                            Task {
+                                await pushBranch(branchName)
+                            }
+                        },
+                        onCreateLocalBranch: { remoteBranchName in
+                            Task {
+                                await createLocalBranch(from: remoteBranchName)
+                            }
+                        },
+                        allLocalBranchNames: Set(viewModel.localBranches.map { $0.name })
                     )
                 } else {
                     // Simple List View with lazy loading
@@ -269,7 +312,9 @@ struct HistoryTab: View {
                                 }
                                 .onTapGesture(count: 2) {
                                     selectedCommit = commit
-                                    showCommitDetail = true
+                                    Task {
+                                        await smartCheckout(for: commit)
+                                    }
                                 }
                                 .contextMenu {
                                     commitContextMenu(for: commit)
@@ -514,6 +559,144 @@ struct HistoryTab: View {
         }
     }
 
+    private func switchToBranch(_ branchName: String) async {
+        do {
+            // Handle remote branches (origin/branch-name) by extracting branch name
+            let targetBranch: String
+            if branchName.hasPrefix("origin/") {
+                targetBranch = branchName
+            } else {
+                targetBranch = branchName
+            }
+            try await viewModel.checkoutBranch(name: targetBranch)
+            await viewModel.loadCommits(limit: currentLimit)
+            await viewModel.loadBranches()
+        } catch {
+            operationError = "Failed to switch to branch: \(error.localizedDescription)"
+            showOperationError = true
+        }
+    }
+
+    private func deleteBranch(_ branchName: String) async {
+        // Find the branch in viewModel
+        if let branch = viewModel.branches.first(where: { $0.name == branchName }) {
+            do {
+                try await viewModel.deleteBranch(branch, force: false, deleteRemote: false)
+                await viewModel.loadCommits(limit: currentLimit)
+                operationSuccess = "Branch '\(branchName)' deleted successfully"
+                showOperationSuccess = true
+            } catch {
+                operationError = "Failed to delete branch: \(error.localizedDescription)"
+                showOperationError = true
+            }
+        } else {
+            // Try deleting by name directly if not found in branches list
+            do {
+                let gitService = DependencyContainer.shared.gitService
+                try await gitService.deleteBranch(name: branchName, force: false)
+                await viewModel.loadBranches()
+                await viewModel.loadCommits(limit: currentLimit)
+                operationSuccess = "Branch '\(branchName)' deleted successfully"
+                showOperationSuccess = true
+            } catch {
+                operationError = "Failed to delete branch: \(error.localizedDescription)"
+                showOperationError = true
+            }
+        }
+        branchToDelete = nil
+    }
+
+    private func pushBranch(_ branchName: String) async {
+        isPushingBranch = true
+        defer { isPushingBranch = false }
+
+        do {
+            // Determine the actual branch name (strip origin/ prefix if present)
+            let localBranchName: String
+            if branchName.hasPrefix("origin/") {
+                localBranchName = String(branchName.dropFirst(7))
+            } else {
+                localBranchName = branchName
+            }
+
+            let options = PushOptions(
+                remote: "origin",
+                branch: localBranchName,
+                setUpstream: true
+            )
+            let result = try await viewModel.pushWithOptions(options)
+            if result.success {
+                operationSuccess = "Branch '\(localBranchName)' pushed successfully"
+                showOperationSuccess = true
+            } else if let error = result.errorMessage {
+                operationError = error
+                showOperationError = true
+            }
+            await viewModel.loadRemoteStatus()
+        } catch {
+            operationError = "Failed to push branch: \(error.localizedDescription)"
+            showOperationError = true
+        }
+    }
+
+    private func createLocalBranch(from remoteBranchName: String) async {
+        do {
+            // Extract the local branch name from remote branch (e.g., "origin/feature-x" -> "feature-x")
+            let localBranchName: String
+            if remoteBranchName.hasPrefix("origin/") {
+                localBranchName = String(remoteBranchName.dropFirst(7))
+            } else {
+                localBranchName = remoteBranchName
+            }
+
+            // Create a local branch tracking the remote branch
+            _ = try await viewModel.createBranch(name: localBranchName, from: remoteBranchName)
+            await viewModel.loadBranches()
+            await viewModel.loadCommits(limit: currentLimit)
+
+            operationSuccess = "Local branch '\(localBranchName)' created from '\(remoteBranchName)'"
+            showOperationSuccess = true
+        } catch {
+            operationError = "Failed to create local branch: \(error.localizedDescription)"
+            showOperationError = true
+        }
+    }
+
+    private func smartCheckout(for commit: Commit) async {
+        let refs = commit.refs
+
+        var localBranches: [String] = []
+        var remoteBranches: [String] = []
+
+        for ref in refs {
+            if ref.hasPrefix("origin/") {
+                remoteBranches.append(ref)
+            } else if !ref.hasPrefix("tag: ") && ref != "HEAD" {
+                if ref.hasPrefix("HEAD -> ") {
+                    let branchName = String(ref.dropFirst(8))
+                    localBranches.append(branchName)
+                } else {
+                    localBranches.append(ref)
+                }
+            }
+        }
+
+        do {
+            // Priority: local branches (including HEAD) > remote branches > commit hash
+            if let branch = localBranches.first {
+                try await viewModel.checkoutBranch(name: branch)
+            } else if let remote = remoteBranches.first {
+                try await viewModel.checkoutBranch(name: remote)
+            } else {
+                try await viewModel.checkoutCommit(hash: commit.hash)
+            }
+            await viewModel.loadCommits(limit: currentLimit)
+        } catch {
+            checkoutError = error.localizedDescription
+            showCheckoutError = true
+        }
+    }
+
     // MARK: - Commit Preview
 
     private func commitPreview(_ commit: Commit) -> some View {
@@ -678,6 +861,14 @@ struct HistoryTab: View {
 
     @ViewBuilder
     private func commitContextMenu(for commit: Commit) -> some View {
+        Button {
+            Task {
+                await smartCheckout(for: commit)
+            }
+        } label: {
+            Label("Checkout", systemImage: "arrow.triangle.2.circlepath")
+        }
+
         Button {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(commit.hash, forType: .string)

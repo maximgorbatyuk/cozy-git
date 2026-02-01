@@ -240,11 +240,12 @@ class GraphLayoutCalculator {
 // MARK: - Graph Constants
 
 private enum GraphConstants {
-    static let nodeRadius: CGFloat = 5
-    static let laneWidth: CGFloat = 20
+    static let nodeRadius: CGFloat = 4
+    static let laneWidth: CGFloat = 14
     static let rowHeight: CGFloat = 32
-    static let lineWidth: CGFloat = 2
-    static let graphWidth: CGFloat = 120
+    static let lineWidth: CGFloat = 1.5
+    static let graphWidth: CGFloat = 80
+    static let graphPadding: CGFloat = 6
 }
 
 // MARK: - Commit Graph View
@@ -318,7 +319,7 @@ struct CommitGraphView: View {
         for (_, fromLane, toLane) in node.parentLanes {
             let startPoint = nodeCenter
             let endY = CGFloat(node.row + 1) * GraphConstants.rowHeight + GraphConstants.rowHeight / 2
-            let endX = CGFloat(toLane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + 10
+            let endX = CGFloat(toLane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + GraphConstants.graphPadding
             let endPoint = CGPoint(x: endX, y: endY)
 
             var path = Path()
@@ -346,7 +347,7 @@ struct CommitGraphView: View {
     }
 
     private func nodeCenter(for node: CommitGraphNode) -> CGPoint {
-        let x = CGFloat(node.lane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + 10
+        let x = CGFloat(node.lane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + GraphConstants.graphPadding
         let y = CGFloat(node.row) * GraphConstants.rowHeight + GraphConstants.rowHeight / 2
         return CGPoint(x: x, y: y)
     }
@@ -363,12 +364,18 @@ struct CommitGraphRow: View {
     var onBranchClick: ((String, String?) -> Void)?
     var onCommitClick: (() -> Void)?
     var onCommitDoubleClick: (() -> Void)?
+    var onSwitchToBranch: ((String) -> Void)?
+    var onDeleteBranch: ((String) -> Void)?
+    var onPushBranch: ((String) -> Void)?
+    var onCreateLocalBranch: ((String) -> Void)?
+    /// Set of all local branch names in the repository (not just on this commit)
+    var allLocalBranchNames: Set<String> = []
 
     var body: some View {
         HStack(spacing: 0) {
             // Graph portion
             graphPortion
-                .frame(width: CGFloat(max(maxLanes, 3)) * GraphConstants.laneWidth + 20)
+                .frame(width: CGFloat(max(maxLanes, 2)) * GraphConstants.laneWidth + GraphConstants.graphPadding * 2)
 
             // Commit info
             commitInfo
@@ -382,18 +389,172 @@ struct CommitGraphRow: View {
         .onTapGesture(count: 1) {
             onCommitClick?()
         }
+        .contextMenu {
+            contextMenuContent
+        }
+    }
+
+    // MARK: - Context Menu
+
+    @ViewBuilder
+    private var contextMenuContent: some View {
+        let branchInfo = extractBranchInfo(from: node.commit.refs)
+
+        if !branchInfo.branches.isEmpty {
+            // Branch actions section
+            Section("Branches") {
+                ForEach(branchInfo.branches, id: \.name) { branch in
+                    Menu(branch.displayName) {
+                        if branch.name != currentBranch {
+                            Button {
+                                onSwitchToBranch?(branch.name)
+                            } label: {
+                                Label("Switch to Branch", systemImage: "arrow.triangle.branch")
+                            }
+                        }
+
+                        // For remote branches, show appropriate action based on whether local exists
+                        if branch.isRemote && !branchInfo.localBranchNames.contains(branch.localName) {
+                            // Check if local branch exists elsewhere in the repository
+                            if allLocalBranchNames.contains(branch.localName) {
+                                // Local branch exists but is not on this commit (outdated)
+                                Button {
+                                    onSwitchToBranch?(branch.localName)
+                                } label: {
+                                    Label("Switch to Local '\(branch.localName)'", systemImage: "arrow.triangle.branch")
+                                }
+                            } else {
+                                // No local branch exists - offer to create one
+                                Button {
+                                    onCreateLocalBranch?(branch.name)
+                                } label: {
+                                    Label("Create Local Branch", systemImage: "plus.circle")
+                                }
+                            }
+                        }
+
+                        Button {
+                            onPushBranch?(branch.name)
+                        } label: {
+                            Label("Push", systemImage: "arrow.up.to.line")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            onDeleteBranch?(branch.name)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .disabled(branch.name == currentBranch)
+                    }
+                }
+            }
+
+            Divider()
+        }
+
+        // Show actions at top level if there are only remote branches on this commit
+        if !branchInfo.remoteBranchesWithoutLocal.isEmpty && branchInfo.localBranchNames.isEmpty {
+            ForEach(branchInfo.remoteBranchesWithoutLocal, id: \.name) { branch in
+                // Check if local branch exists elsewhere in the repository
+                if allLocalBranchNames.contains(branch.localName) {
+                    // Local branch exists but is outdated - offer to switch
+                    Button {
+                        onSwitchToBranch?(branch.localName)
+                    } label: {
+                        Label("Switch to Local '\(branch.localName)'", systemImage: "arrow.triangle.branch")
+                    }
+                } else {
+                    // No local branch exists - offer to create one
+                    Button {
+                        onCreateLocalBranch?(branch.name)
+                    } label: {
+                        Label("Create Local Branch '\(branch.localName)'", systemImage: "plus.circle")
+                    }
+                }
+            }
+
+            Divider()
+        }
+
+        // Commit actions
+        Button {
+            onCommitDoubleClick?()
+        } label: {
+            Label("Checkout Commit", systemImage: "arrow.triangle.2.circlepath")
+        }
+
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(node.commit.hash, forType: .string)
+        } label: {
+            Label("Copy Hash", systemImage: "doc.on.doc")
+        }
+    }
+
+    /// Represents a branch extracted from refs
+    private struct BranchEntry: Hashable {
+        let name: String
+        let displayName: String
+        let isRemote: Bool
+        /// The local branch name (without origin/ prefix for remote branches)
+        let localName: String
+    }
+
+    /// Contains extracted branch information
+    private struct ExtractedBranchInfo {
+        let branches: [BranchEntry]
+        let localBranchNames: Set<String>
+        let remoteBranchesWithoutLocal: [BranchEntry]
+    }
+
+    /// Extract local and remote branches from refs with additional metadata
+    private func extractBranchInfo(from refs: [String]) -> ExtractedBranchInfo {
+        var branches: [BranchEntry] = []
+        var localBranchNames: Set<String> = []
+        var remoteBranches: [BranchEntry] = []
+
+        for ref in refs {
+            if ref.hasPrefix("HEAD -> ") {
+                let branchName = String(ref.dropFirst(8))
+                branches.append(BranchEntry(name: branchName, displayName: branchName, isRemote: false, localName: branchName))
+                localBranchNames.insert(branchName)
+            } else if ref.hasPrefix("origin/") {
+                let localName = String(ref.dropFirst(7))
+                // Skip HEAD reference
+                if localName != "HEAD" {
+                    let entry = BranchEntry(name: ref, displayName: ref, isRemote: true, localName: localName)
+                    branches.append(entry)
+                    remoteBranches.append(entry)
+                }
+            } else if !ref.hasPrefix("tag:") && ref != "HEAD" {
+                // Local branch without HEAD prefix
+                branches.append(BranchEntry(name: ref, displayName: ref, isRemote: false, localName: ref))
+                localBranchNames.insert(ref)
+            }
+        }
+
+        // Find remote branches that don't have a corresponding local branch
+        let remoteBranchesWithoutLocal = remoteBranches.filter { !localBranchNames.contains($0.localName) }
+
+        return ExtractedBranchInfo(
+            branches: branches,
+            localBranchNames: localBranchNames,
+            remoteBranchesWithoutLocal: remoteBranchesWithoutLocal
+        )
     }
 
     private var graphPortion: some View {
         Canvas { context, size in
             let nodeCenter = CGPoint(
-                x: CGFloat(node.lane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + 10,
+                x: CGFloat(node.lane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + GraphConstants.graphPadding,
                 y: size.height / 2
             )
 
             // 1. Draw vertical lines for ALL continuing lanes (from top to center)
             for (laneIndex, laneColor) in node.continuingLanes {
-                let x = CGFloat(laneIndex) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + 10
+                let x = CGFloat(laneIndex) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + GraphConstants.graphPadding
                 var linePath = Path()
                 linePath.move(to: CGPoint(x: x, y: 0))
 
@@ -409,7 +570,7 @@ struct CommitGraphRow: View {
 
             // 2. Draw vertical lines for ALL active lanes (from center/top to bottom)
             for (laneIndex, laneColor) in node.activeLanes {
-                let x = CGFloat(laneIndex) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + 10
+                let x = CGFloat(laneIndex) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + GraphConstants.graphPadding
 
                 // Skip if this was already drawn as continuing lane and passes through
                 if node.continuingLanes[laneIndex] != nil && laneIndex != node.lane {
@@ -430,8 +591,8 @@ struct CommitGraphRow: View {
 
             // 3. Draw merge curves (from node to other lanes)
             for (_, fromLane, toLane) in node.parentLanes where toLane != fromLane {
-                let startX = CGFloat(fromLane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + 10
-                let endX = CGFloat(toLane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + 10
+                let startX = CGFloat(fromLane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + GraphConstants.graphPadding
+                let endX = CGFloat(toLane) * GraphConstants.laneWidth + GraphConstants.laneWidth / 2 + GraphConstants.graphPadding
                 let startPoint = CGPoint(x: startX, y: size.height / 2)
                 let endPoint = CGPoint(x: endX, y: size.height)
 
@@ -579,6 +740,12 @@ struct CommitGraphListView: View {
     let onDoubleClick: (Commit) -> Void
     var currentBranch: String?
     var onBranchClick: ((String, String?) -> Void)?
+    var onSwitchToBranch: ((String) -> Void)?
+    var onDeleteBranch: ((String) -> Void)?
+    var onPushBranch: ((String) -> Void)?
+    var onCreateLocalBranch: ((String) -> Void)?
+    /// Set of all local branch names in the repository
+    var allLocalBranchNames: Set<String> = []
 
     @State private var nodes: [CommitGraphNode] = []
     @State private var maxLanes: Int = 1
@@ -599,12 +766,17 @@ struct CommitGraphListView: View {
                         onCommitDoubleClick: {
                             selectedCommit = node.commit
                             onDoubleClick(node.commit)
-                        }
+                        },
+                        onSwitchToBranch: onSwitchToBranch,
+                        onDeleteBranch: onDeleteBranch,
+                        onPushBranch: onPushBranch,
+                        onCreateLocalBranch: onCreateLocalBranch,
+                        allLocalBranchNames: allLocalBranchNames
                     )
 
                     if node.id != nodes.last?.id {
                         Divider()
-                            .padding(.leading, CGFloat(maxLanes) * GraphConstants.laneWidth + 28)
+                            .padding(.leading, CGFloat(maxLanes) * GraphConstants.laneWidth + GraphConstants.graphPadding * 2 + 8)
                     }
                 }
             }

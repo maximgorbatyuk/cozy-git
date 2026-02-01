@@ -408,6 +408,28 @@ final class RepositoryViewModel {
         }
     }
 
+    func checkoutCommit(hash: String) async throws {
+        guard let repo = repository else {
+            throw GitError.repositoryNotOpen
+        }
+
+        let result = await DependencyContainer.shared.shellExecutor.executeGit(
+            arguments: ["checkout", hash],
+            workingDirectory: repo.path
+        )
+
+        guard result.success else {
+            throw GitError.commandFailed(result.error ?? "Failed to checkout commit")
+        }
+
+        // Reload data after checkout
+        await loadBranches()
+        // Update current branch in repository (will be HEAD for detached state)
+        if let currentBranch = try? await gitService.getCurrentBranch() {
+            repository?.currentBranch = currentBranch
+        }
+    }
+
     func deleteBranch(_ branch: Branch, force: Bool = false) async {
         do {
             try await gitService.deleteBranch(name: branch.name, force: force)
