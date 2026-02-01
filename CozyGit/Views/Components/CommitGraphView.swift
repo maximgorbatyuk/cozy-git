@@ -493,16 +493,16 @@ struct CommitGraphRow: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.secondary)
 
+                Text(node.commit.date.formatted(.relative(presentation: .named)))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
                 Text(node.commit.author)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
-
-                Spacer()
-
-                Text(node.commit.date.formatted(.relative(presentation: .named)))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
         }
         .padding(.horizontal, 8)
